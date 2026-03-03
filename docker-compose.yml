@@ -1,0 +1,120 @@
+version: "3.9"
+
+# =============================================================================
+# DealHunter — Docker Compose
+# Serviços: dealhunter app, n8n (orquestrador), shlink (encurtador)
+# Uso: docker compose up -d
+# =============================================================================
+
+networks:
+  dealhunter_net:
+    driver: bridge
+
+volumes:
+  n8n_data:
+  shlink_data:
+  dealhunter_data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # DealHunter — Aplicação principal
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dealhunter_app
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - dealhunter_data:/app/data
+      - ./src:/app/src:ro           # Hot-reload em dev (read-only em prod)
+      - ./logs:/app/logs
+    networks:
+      - dealhunter_net
+    depends_on:
+      - shlink
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "from src.config import settings; print('ok')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # n8n — Orquestração de workflows / webhooks
+  # Acesso: http://localhost:5678
+  # ---------------------------------------------------------------------------
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: dealhunter_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-changeme}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678}
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/home/node/.n8n/workflows:ro
+    networks:
+      - dealhunter_net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Shlink — Encurtador de links + analytics
+  # Acesso: http://localhost:8080
+  # Docs: https://shlink.io
+  # ---------------------------------------------------------------------------
+  shlink:
+    image: shlinkio/shlink:stable
+    container_name: dealhunter_shlink
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - DEFAULT_DOMAIN=${SHLINK_DOMAIN:-localhost:8080}
+      - IS_HTTPS_ENABLED=false
+      - GEOLITE_LICENSE_KEY=${GEOLITE_LICENSE_KEY:-}
+      # Banco: SQLite embutido (simples); trocar para PostgreSQL em produção
+      - DB_DRIVER=sqlite
+      - INITIAL_API_KEY=${SHLINK_API_KEY:-changeme-shlink-key}
+      - TZ=America/Sao_Paulo
+    volumes:
+      - shlink_data:/etc/shlink/data
+    networks:
+      - dealhunter_net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/rest/v3/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # (Opcional) Shlink Web Client — Interface gráfica para o Shlink
+  # Acesso: http://localhost:3000
+  # Descomente se quiser a interface web
+  # ---------------------------------------------------------------------------
+  # shlink-web:
+  #   image: shlinkio/shlink-web-client:stable
+  #   container_name: dealhunter_shlink_web
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:8080"
+  #   networks:
+  #     - dealhunter_net
