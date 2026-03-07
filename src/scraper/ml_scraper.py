@@ -129,7 +129,7 @@ class MLScraper(BaseScraper):
 
     Campos extraídos de cada card:
     - ml_id, url, title, price, original_price, discount_pct
-    - rating, review_count, seller, free_shipping, image_url
+    - rating, review_count, free_shipping, image_url
     """
 
     def __init__(
@@ -429,7 +429,7 @@ class MLScraper(BaseScraper):
 
         Extração padronizada independente da fonte:
         ml_id, url, title, price, original_price, discount_pct,
-        rating, review_count, seller, free_shipping, image_url, category.
+        rating, review_count, free_shipping, image_url, category.
         """
         try:
             # --- URL e ML ID ---
@@ -592,7 +592,7 @@ class MLScraper(BaseScraper):
         return float(base)
 
     # ------------------------------------------------------------------
-    # Extração padronizada de rating, reviews, seller
+    # Extração padronizada de rating, reviews
     # ------------------------------------------------------------------
 
     def _parse_rating(self, item: Tag) -> float:

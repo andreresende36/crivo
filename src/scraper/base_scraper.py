@@ -99,7 +99,6 @@ class ScrapedProduct:
     discount_pct: float = 0.0  # Percentual de desconto calculado
 
     # Metadata
-    seller: str = ""
     rating: float = 0.0  # Avaliação média (0-5)
     review_count: int = 0  # Número de avaliações
     category: str = ""
@@ -123,7 +122,6 @@ class ScrapedProduct:
             "price": self.price,
             "original_price": self.original_price,
             "discount_pct": self.discount_pct,
-            "seller": self.seller,
             "rating": self.rating,
             "review_count": self.review_count,
             "category": self.category,

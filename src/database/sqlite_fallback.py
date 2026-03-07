@@ -110,7 +110,6 @@ class SQLiteFallback:
             current_price     REAL NOT NULL,
             original_price    REAL,
             discount_percent  INTEGER DEFAULT 0,
-            seller_name       TEXT DEFAULT '',
             rating_stars      REAL DEFAULT 0,
             rating_count      INTEGER DEFAULT 0,
             free_shipping     INTEGER DEFAULT 0,
@@ -248,7 +247,7 @@ class SQLiteFallback:
                     """
                     UPDATE products SET
                         title=?, current_price=?, original_price=?,
-                        discount_percent=?, seller_name=?,
+                        discount_percent=?,
                         rating_stars=?, rating_count=?,
                         free_shipping=?, thumbnail_url=?,
                         product_url=?, category=?,
@@ -260,7 +259,6 @@ class SQLiteFallback:
                         product.price,
                         product.original_price,
                         int(product.discount_pct),
-                        product.seller,
                         product.rating,
                         product.review_count,
                         int(product.free_shipping),
@@ -278,11 +276,11 @@ class SQLiteFallback:
                     """
                     INSERT INTO products (
                         id, ml_id, title, current_price, original_price,
-                        discount_percent, seller_name,
+                        discount_percent,
                         rating_stars, rating_count,
                         free_shipping, thumbnail_url, product_url, category,
                         first_seen_at, last_seen_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         product_id,
@@ -291,7 +289,6 @@ class SQLiteFallback:
                         product.price,
                         product.original_price,
                         int(product.discount_pct),
-                        product.seller,
                         product.rating,
                         product.review_count,
                         int(product.free_shipping),
@@ -335,11 +332,11 @@ class SQLiteFallback:
                 """
                 INSERT OR IGNORE INTO products (
                     id, ml_id, title, current_price, original_price,
-                    discount_percent, seller_name,
+                    discount_percent,
                     rating_stars, rating_count,
                     free_shipping, thumbnail_url, product_url, category,
                     first_seen_at, last_seen_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     str(data.get("id", "")),
@@ -348,7 +345,6 @@ class SQLiteFallback:
                     float(data.get("current_price", 0)),
                     data.get("original_price"),
                     int(data.get("discount_percent", 0)),
-                    str(data.get("seller_name", "")),
                     float(data.get("rating_stars", 0)),
                     int(data.get("rating_count", 0)),
                     int(bool(data.get("free_shipping", False))),

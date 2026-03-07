@@ -455,7 +455,6 @@ class SupabaseClient:
           url           → product_url
           price         → current_price
           discount_pct  → discount_percent  (float → int)
-          seller        → seller_name
           rating        → rating_stars
           review_count  → rating_count
           image_url     → thumbnail_url
@@ -467,7 +466,6 @@ class SupabaseClient:
             "current_price":    product.price,
             "original_price":   product.original_price,
             "discount_percent": int(product.discount_pct),
-            "seller_name":      product.seller,
             "rating_stars":     product.rating,
             "rating_count":     product.review_count,
             "free_shipping":    product.free_shipping,

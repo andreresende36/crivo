@@ -30,7 +30,6 @@ CREATE TABLE IF NOT EXISTS products (
     current_price       DECIMAL(10,2) NOT NULL,
     original_price      DECIMAL(10,2),
     discount_percent    INTEGER     DEFAULT 0,
-    seller_name         TEXT        DEFAULT '',
     rating_stars        DECIMAL(3,1) DEFAULT 0,
     rating_count        INTEGER     DEFAULT 0,
     free_shipping       BOOLEAN     DEFAULT FALSE,
