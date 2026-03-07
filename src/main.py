@@ -6,6 +6,7 @@ Fluxo: scraping cards → dedup → fake discount filter → salvar.
 """
 
 import asyncio
+import time
 
 import structlog
 
@@ -64,10 +65,14 @@ async def run_pipeline() -> dict:
             return stats
 
         # 2. DEDUPLICAÇÃO — Remove produtos já publicados recentemente
-        new_products = []
-        for product in all_products:
-            if not await storage.was_recently_sent(product.ml_id, hours=24):
-                new_products.append(product)
+        # Atalho: se não houve envios nas últimas 24h, pula o loop inteiro
+        if await storage.has_recent_sends(hours=24):
+            new_products = []
+            for product in all_products:
+                if not await storage.was_recently_sent(product.ml_id, hours=24):
+                    new_products.append(product)
+        else:
+            new_products = all_products
 
         logger.info("dedup_done", total=len(all_products), new=len(new_products))
 
@@ -82,21 +87,38 @@ async def run_pipeline() -> dict:
             fake=len(new_products) - len(genuine_products),
         )
 
-        # 4. SALVAR NO BANCO
-        for product in genuine_products:
+        # 4. SALVAR NO BANCO (batch: 3 queries ao invés de N×3)
+        if genuine_products:
             try:
-                product_id = await storage.upsert_product(product)
-                await storage.add_price_history(
-                    product_id, product.price, product.original_price
-                )
-                stats["saved"] += 1
+                ids = await storage.upsert_products_batch(genuine_products)
+                entries = [
+                    {
+                        "product_id": ids[p.ml_id],
+                        "price": p.price,
+                        "original_price": p.original_price,
+                    }
+                    for p in genuine_products
+                    if p.ml_id in ids
+                ]
+                await storage.add_price_history_batch(entries)
+                stats["saved"] = len(ids)
             except Exception as exc:
-                logger.error(
-                    "save_failed",
-                    ml_id=product.ml_id,
-                    error=str(exc),
-                )
-                stats["errors"] += 1
+                logger.error("batch_save_failed", error=str(exc))
+                # Fallback: salva individualmente
+                for product in genuine_products:
+                    try:
+                        product_id = await storage.upsert_product(product)
+                        await storage.add_price_history(
+                            product_id, product.price, product.original_price
+                        )
+                        stats["saved"] += 1
+                    except Exception as exc2:
+                        logger.error(
+                            "save_failed",
+                            ml_id=product.ml_id,
+                            error=str(exc2),
+                        )
+                        stats["errors"] += 1
 
     logger.info("pipeline_done", **stats)
     return stats
@@ -104,6 +126,8 @@ async def run_pipeline() -> dict:
 
 async def main():
     """Entry point com health check inicial."""
+    start_time = time.time()
+
     # Health check antes de começar
     checker = HealthCheck()
     report = await checker.run()
@@ -113,6 +137,9 @@ async def main():
 
     # Executa pipeline
     stats = await run_pipeline()
+
+    elapsed_time = round(time.time() - start_time, 2)
+    stats["elapsed_seconds"] = elapsed_time
     logger.info("execution_complete", **stats)
 
 

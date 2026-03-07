@@ -290,14 +290,14 @@ class BaseScraper(ABC):
         await asyncio.sleep(delay)
 
     async def _human_scroll(self, page: Page) -> None:
-        """Simula scroll humano na página."""
+        """Simula scroll na página (steps grandes + delays curtos)."""
         total_height = await page.evaluate("document.body.scrollHeight")
         current = 0
         while current < total_height:
-            scroll_step = random.randint(200, 600)
+            scroll_step = random.randint(600, 1200)
             current = min(current + scroll_step, total_height)
             await page.evaluate(f"window.scrollTo(0, {current})")
-            await asyncio.sleep(random.uniform(0.1, 0.4))
+            await asyncio.sleep(random.uniform(0.05, 0.15))
 
     async def _rotate_context_if_needed(self, every_n_requests: int = 20) -> None:
         """Recria o contexto do browser a cada N requisições para limpar cookies."""

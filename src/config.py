@@ -125,8 +125,8 @@ class MercadoLivreConfig:
 @dataclass
 class ScraperConfig:
     # Delays em segundos (min, max)
-    delay_min: float = float(os.getenv("SCRAPER_DELAY_MIN", "2.0"))
-    delay_max: float = float(os.getenv("SCRAPER_DELAY_MAX", "5.0"))
+    delay_min: float = float(os.getenv("SCRAPER_DELAY_MIN", "1.0"))
+    delay_max: float = float(os.getenv("SCRAPER_DELAY_MAX", "3.0"))
     # Timeout de página em ms
     page_timeout: int = int(os.getenv("SCRAPER_PAGE_TIMEOUT", "30000"))
     # Headless mode para Playwright

@@ -182,6 +182,69 @@ class StorageManager:
         return await self._sqlite.get_product_id(ml_id)
 
     # ------------------------------------------------------------------
+    # Batch operations (performance)
+    # ------------------------------------------------------------------
+
+    async def check_duplicates_batch(self, ml_ids: list[str]) -> set[str]:
+        """Verifica quais ml_ids já existem (1 query ao invés de N)."""
+        if self._using_supabase:
+            try:
+                return await self._supabase.check_duplicates_batch(ml_ids)
+            except SupabaseError:
+                pass
+        return await self._sqlite.check_duplicates_batch(ml_ids)
+
+    async def upsert_products_batch(
+        self, products: list[ScrapedProduct]
+    ) -> dict[str, str]:
+        """
+        Upsert de múltiplos produtos (1 chamada ao invés de N).
+        Retorna dict mapeando ml_id → UUID.
+        """
+        if not products:
+            return {}
+
+        if self._using_supabase:
+            try:
+                remote_ids = await self._supabase.upsert_products_batch(products)
+                # Espelha no SQLite com os mesmos UUIDs
+                await self._sqlite.upsert_products_batch(
+                    products, product_ids=remote_ids
+                )
+                return remote_ids
+            except SupabaseError as exc:
+                logger.warning(
+                    "supabase_batch_upsert_failed",
+                    error=str(exc),
+                )
+
+        # Fallback: SQLite gera UUIDs próprios
+        return await self._sqlite.upsert_products_batch(products)
+
+    async def add_price_history_batch(self, entries: list[dict]) -> bool:
+        """
+        Insere múltiplas entradas de histórico de preço (1 chamada ao invés de N).
+        entries: lista de dicts com keys: product_id, price, original_price.
+        """
+        if not entries:
+            return True
+
+        local_ok = False
+        try:
+            local_ok = await self._sqlite.add_price_history_batch(entries)
+        except SQLiteError as exc:
+            logger.warning("sqlite_price_history_batch_failed", error=str(exc))
+
+        if self._using_supabase:
+            try:
+                return await self._supabase.add_price_history_batch(entries)
+            except SupabaseError as exc:
+                logger.warning(
+                    "supabase_price_history_batch_failed", error=str(exc)
+                )
+        return local_ok
+
+    # ------------------------------------------------------------------
     # price_history
     # ------------------------------------------------------------------
 
@@ -282,6 +345,15 @@ class StorageManager:
     # ------------------------------------------------------------------
     # sent_offers
     # ------------------------------------------------------------------
+
+    async def has_recent_sends(self, hours: int = 24) -> bool:
+        """Verifica rapidamente se há algum envio recente (1 query)."""
+        if self._using_supabase:
+            try:
+                return await self._supabase.has_recent_sends(hours)
+            except SupabaseError:
+                pass
+        return await self._sqlite.has_recent_sends(hours)
 
     async def mark_as_sent(
         self,
