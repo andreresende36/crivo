@@ -19,10 +19,12 @@ if TYPE_CHECKING:
     from src.database.storage_manager import StorageManager
 
 import structlog
+import asyncio
 from bs4 import BeautifulSoup, Tag
 from playwright.async_api import Page
 
 from .base_scraper import BaseScraper, CaptchaError, RateLimitError, ScrapedProduct
+from .ml_classifier import get_product_category, classify_with_ai
 
 logger = structlog.get_logger(__name__)
 
@@ -41,7 +43,7 @@ class ScrapeSource:
 
     name: str  # Ex: "ofertas_do_dia"
     url: str  # URL base da fonte
-    max_pages: int = 20
+    max_pages: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +149,7 @@ class MLScraper(BaseScraper):
             ScrapeSource(
                 name="ofertas_do_dia",
                 url=OFERTAS_URL,
-                max_pages=20,
+                max_pages=1,
             )
         ]
 
@@ -322,25 +324,46 @@ class MLScraper(BaseScraper):
                 raw_count=len(page_products),
             )
 
-            # Dedup + persistência inline (se storage fornecido)
-            for p in page_products:
-                if self._storage:
-                    try:
-                        is_dupe = await self._storage.check_duplicate(p.ml_id)
-                        if is_dupe:
-                            dupes_skipped += 1
-                            continue
-                        product_id = await self._storage.upsert_product(p)
-                        await self._storage.add_price_history(
-                            product_id, p.price, p.original_price
+            # AI Enrichement for 'Outros' categories
+            page_products = await self._enrich_categories_with_ai(page_products)
+
+            # Dedup + persistência batch (3 queries ao invés de N×3)
+            if self._storage and page_products:
+                try:
+                    # 1 query: quais ml_ids já existem?
+                    existing = await self._storage.check_duplicates_batch(
+                        [p.ml_id for p in page_products]
+                    )
+                    dupes_skipped += len(existing)
+                    new_products = [
+                        p for p in page_products if p.ml_id not in existing
+                    ]
+
+                    if new_products:
+                        # 1 upsert para todos os novos
+                        ids = await self._storage.upsert_products_batch(
+                            new_products
                         )
-                    except Exception as exc:
-                        logger.warning(
-                            "storage_error",
-                            ml_id=p.ml_id,
-                            error=str(exc),
-                        )
-                products.append(p)
+
+                        # 1 insert para todo o histórico de preço
+                        entries = [
+                            {
+                                "product_id": ids[p.ml_id],
+                                "price": p.price,
+                                "original_price": p.original_price,
+                            }
+                            for p in new_products
+                            if p.ml_id in ids
+                        ]
+                        await self._storage.add_price_history_batch(entries)
+
+                    products.extend(new_products)
+                except Exception as exc:
+                    logger.warning("storage_batch_error", error=str(exc))
+                    # Fallback: adiciona todos mesmo se storage falhou
+                    products.extend(page_products)
+            else:
+                products.extend(page_products)
 
             if not page_products:
                 break
@@ -359,6 +382,30 @@ class MLScraper(BaseScraper):
             await self._random_delay()
 
         return products, dupes_skipped, parse_errors
+
+    async def _enrich_categories_with_ai(
+        self, products: list[ScrapedProduct]
+    ) -> list[ScrapedProduct]:
+        """Runs the LLM classifier concurrently for products categorized as 'Outros'."""
+        outros_products = [p for p in products if p.category == "Outros"]
+        if not outros_products:
+            return products
+
+        logger.info("ai_enrichment_start", count=len(outros_products))
+
+        async def _classify_and_update(p: ScrapedProduct):
+            try:
+                new_cat = await classify_with_ai(p.title)
+                p.category = new_cat
+            except Exception as e:
+                logger.warning("ai_enrichment_failed", title=p.title, error=str(e))
+
+        # Run classifications concurrently with a small concurrency limit if needed,
+        # but asyncio.gather is fine for a single page (usually ~50 products max)
+        await asyncio.gather(*[_classify_and_update(p) for p in outros_products])
+
+        logger.info("ai_enrichment_done")
+        return products
 
     # ------------------------------------------------------------------
     # Paginação
@@ -498,7 +545,7 @@ class MLScraper(BaseScraper):
                 original_price=original_price,
                 rating=rating,
                 review_count=review_count,
-                category=source.name,
+                category=get_product_category(title),
                 image_url=image_url,
                 free_shipping=free_shipping,
                 source=source.name,

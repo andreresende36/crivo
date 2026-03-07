@@ -155,6 +155,87 @@ class SupabaseClient:
                 str(exc), operation="check_duplicate", ml_id=ml_id
             ) from exc
 
+    async def check_duplicates_batch(self, ml_ids: list[str]) -> set[str]:
+        """
+        Verifica quais ml_ids já existem no banco em UMA única query.
+        Retorna set dos ml_ids que já existem.
+        """
+        if not ml_ids:
+            return set()
+        try:
+            result = (
+                await self._db.table("products")
+                .select("ml_id")
+                .in_("ml_id", ml_ids)
+                .execute()
+            )
+            return {row["ml_id"] for row in result.data}
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="check_duplicates_batch"
+            ) from exc
+
+    async def upsert_products_batch(
+        self, products: list["ScrapedProduct"]
+    ) -> dict[str, str]:
+        """
+        Upsert de múltiplos produtos em UMA única chamada.
+        Retorna dict mapeando ml_id → UUID do produto.
+        Deduplicates by ml_id (keeps last occurrence).
+        """
+        if not products:
+            return {}
+        # Deduplica por ml_id (Supabase rejeita ON CONFLICT com dupes na mesma batch)
+        seen: dict[str, "ScrapedProduct"] = {}
+        for p in products:
+            seen[p.ml_id] = p
+        unique_products = list(seen.values())
+        rows = [self._product_to_row(p) for p in unique_products]
+        try:
+            result = (
+                await self._db.table("products")
+                .upsert(rows, on_conflict="ml_id")
+                .execute()
+            )
+            if not result.data:
+                raise SupabaseError(
+                    "batch upsert retornou sem dados",
+                    operation="upsert_products_batch",
+                )
+            return {row["ml_id"]: row["id"] for row in result.data}
+        except SupabaseError:
+            raise
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="upsert_products_batch"
+            ) from exc
+
+    async def add_price_history_batch(self, entries: list[dict]) -> bool:
+        """
+        Insere múltiplas entradas de histórico de preço em UMA única chamada.
+        entries: lista de dicts com keys: product_id, price, original_price.
+        """
+        if not entries:
+            return True
+        now = datetime.now(tz=timezone.utc).isoformat()
+        rows = [
+            {
+                "product_id": e["product_id"],
+                "price": e["price"],
+                "original_price": e["original_price"],
+                "recorded_at": now,
+            }
+            for e in entries
+        ]
+        try:
+            await self._db.table("price_history").insert(rows).execute()
+            logger.debug("price_history_batch_added", count=len(rows))
+            return True
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="add_price_history_batch"
+            ) from exc
+
     async def get_product_id(self, ml_id: str) -> Optional[str]:
         """Retorna o UUID interno de um produto pelo ml_id."""
         try:
@@ -307,6 +388,23 @@ class SupabaseClient:
     # ------------------------------------------------------------------
     # sent_offers
     # ------------------------------------------------------------------
+
+    async def has_recent_sends(self, hours: int = 24) -> bool:
+        """Verifica rapidamente se há ALGUM envio nas últimas N horas (1 query)."""
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(hours=hours)).isoformat()
+        try:
+            result = (
+                await self._db.table("sent_offers")
+                .select("id")
+                .gte("sent_at", cutoff)
+                .limit(1)
+                .execute()
+            )
+            return len(result.data) > 0
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="has_recent_sends"
+            ) from exc
 
     async def mark_as_sent(
         self,

@@ -313,6 +313,146 @@ class SQLiteFallback:
                 str(exc), operation="upsert_product", ml_id=product.ml_id
             ) from exc
 
+    async def check_duplicates_batch(self, ml_ids: list[str]) -> set[str]:
+        """Retorna set dos ml_ids que já existem no banco local (1 query)."""
+        if not ml_ids:
+            return set()
+        try:
+            placeholders = ",".join("?" * len(ml_ids))
+            cursor = await self._db.execute(
+                f"SELECT ml_id FROM products WHERE ml_id IN ({placeholders})",  # noqa: S608
+                ml_ids,
+            )
+            rows = await cursor.fetchall()
+            return {row["ml_id"] for row in rows}
+        except Exception as exc:
+            raise SQLiteError(
+                str(exc), operation="check_duplicates_batch"
+            ) from exc
+
+    async def upsert_products_batch(
+        self,
+        products: list[ScrapedProduct],
+        product_ids: dict[str, str] | None = None,
+    ) -> dict[str, str]:
+        """
+        Upsert de múltiplos produtos em 1 transação (1 commit).
+        Retorna dict mapeando ml_id → UUID.
+        Deduplicates by ml_id (keeps last occurrence).
+
+        Args:
+            products: Lista de produtos a inserir/atualizar.
+            product_ids: Mapa ml_id→UUID do Supabase (para manter FKs consistentes).
+        """
+        if not products:
+            return {}
+
+        # Deduplica por ml_id para evitar UNIQUE constraint violation
+        seen: dict[str, ScrapedProduct] = {}
+        for p in products:
+            seen[p.ml_id] = p
+        unique_products = list(seen.values())
+
+        now = datetime.now(tz=timezone.utc).isoformat()
+        result_ids: dict[str, str] = {}
+        ids_map = product_ids or {}
+
+        try:
+            # Busca todos os existentes em 1 query
+            ml_ids = [p.ml_id for p in unique_products]
+            placeholders = ",".join("?" * len(ml_ids))
+            cursor = await self._db.execute(
+                f"SELECT id, ml_id, first_seen_at FROM products WHERE ml_id IN ({placeholders})",  # noqa: S608
+                ml_ids,
+            )
+            existing = {row["ml_id"]: dict(row) for row in await cursor.fetchall()}
+
+            for p in unique_products:
+                if p.ml_id in existing:
+                    pid = existing[p.ml_id]["id"]
+                    first_seen = existing[p.ml_id]["first_seen_at"]
+                    await self._db.execute(
+                        """
+                        UPDATE products SET
+                            title=?, current_price=?, original_price=?,
+                            discount_percent=?,
+                            rating_stars=?, rating_count=?,
+                            free_shipping=?, thumbnail_url=?,
+                            product_url=?, category=?,
+                            first_seen_at=?, last_seen_at=?, synced=0
+                        WHERE ml_id=?
+                        """,
+                        (
+                            p.title, p.price, p.original_price,
+                            int(p.discount_pct),
+                            p.rating, p.review_count,
+                            int(p.free_shipping), p.image_url,
+                            p.url, p.category,
+                            first_seen, now, p.ml_id,
+                        ),
+                    )
+                    result_ids[p.ml_id] = pid
+                else:
+                    pid = ids_map.get(p.ml_id) or str(uuid.uuid4())
+                    await self._db.execute(
+                        """
+                        INSERT INTO products (
+                            id, ml_id, title, current_price, original_price,
+                            discount_percent,
+                            rating_stars, rating_count,
+                            free_shipping, thumbnail_url, product_url, category,
+                            first_seen_at, last_seen_at
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        """,
+                        (
+                            pid, p.ml_id, p.title, p.price, p.original_price,
+                            int(p.discount_pct), p.rating, p.review_count,
+                            int(p.free_shipping), p.image_url, p.url, p.category,
+                            now, now,
+                        ),
+                    )
+                    result_ids[p.ml_id] = pid
+
+            await self._db.commit()  # 1 commit para tudo
+            logger.debug("sqlite_products_batch_upserted", count=len(unique_products))
+            return result_ids
+
+        except Exception as exc:
+            raise SQLiteError(
+                str(exc), operation="upsert_products_batch"
+            ) from exc
+
+    async def add_price_history_batch(self, entries: list[dict]) -> bool:
+        """Insere múltiplas entradas de histórico de preço em 1 commit."""
+        if not entries:
+            return True
+        now = datetime.now(tz=timezone.utc).isoformat()
+        try:
+            await self._db.executemany(
+                """
+                INSERT INTO price_history
+                    (id, product_id, price, original_price, recorded_at)
+                VALUES (?,?,?,?,?)
+                """,
+                [
+                    (
+                        str(uuid.uuid4()),
+                        e["product_id"],
+                        e["price"],
+                        e["original_price"],
+                        now,
+                    )
+                    for e in entries
+                ],
+            )
+            await self._db.commit()
+            logger.debug("sqlite_price_history_batch_added", count=len(entries))
+            return True
+        except Exception as exc:
+            raise SQLiteError(
+                str(exc), operation="add_price_history_batch"
+            ) from exc
+
     async def product_exists(self, product_id: str) -> bool:
         """Verifica se um produto existe no banco local pelo UUID."""
         try:
@@ -483,6 +623,20 @@ class SQLiteFallback:
     # ------------------------------------------------------------------
     # sent_offers
     # ------------------------------------------------------------------
+
+    async def has_recent_sends(self, hours: int = 24) -> bool:
+        """Verifica rapidamente se há ALGUM envio nas últimas N horas (1 query)."""
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(hours=hours)).isoformat()
+        try:
+            cursor = await self._db.execute(
+                "SELECT 1 FROM sent_offers WHERE sent_at >= ? LIMIT 1",
+                (cutoff,),
+            )
+            return await cursor.fetchone() is not None
+        except Exception as exc:
+            raise SQLiteError(
+                str(exc), operation="has_recent_sends"
+            ) from exc
 
     async def mark_as_sent(
         self,
