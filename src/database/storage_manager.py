@@ -182,6 +182,36 @@ class StorageManager:
         return await self._sqlite.get_product_id(ml_id)
 
     # ------------------------------------------------------------------
+    # badges
+    # ------------------------------------------------------------------
+
+    async def resolve_badge_id(self, name: str) -> str | None:
+        """Resolve o nome de um badge para seu UUID, criando se necessário."""
+        if not name:
+            return None
+        if self._using_supabase:
+            try:
+                return await self._supabase.get_or_create_badge(name)
+            except SupabaseError as exc:
+                logger.warning("supabase_badge_resolve_failed", error=str(exc))
+        return await self._sqlite.get_or_create_badge(name)
+
+    # ------------------------------------------------------------------
+    # categories
+    # ------------------------------------------------------------------
+
+    async def resolve_category_id(self, name: str) -> str | None:
+        """Resolve o nome de uma categoria para seu UUID, criando se necessário."""
+        if not name:
+            return None
+        if self._using_supabase:
+            try:
+                return await self._supabase.get_or_create_category(name)
+            except SupabaseError as exc:
+                logger.warning("supabase_category_resolve_failed", error=str(exc))
+        return await self._sqlite.get_or_create_category(name)
+
+    # ------------------------------------------------------------------
     # Batch operations (performance)
     # ------------------------------------------------------------------
 
@@ -204,12 +234,37 @@ class StorageManager:
         if not products:
             return {}
 
+        # Resolve badge IDs em batch (cache por nome)
+        badge_cache: dict[str, str | None] = {}
+        badge_ids: dict[str, str | None] = {}
+        for p in products:
+            if p.badge:
+                if p.badge not in badge_cache:
+                    badge_cache[p.badge] = await self.resolve_badge_id(p.badge)
+                badge_ids[p.ml_id] = badge_cache[p.badge]
+
+        # Resolve category IDs em batch (cache por nome)
+        cat_cache: dict[str, str | None] = {}
+        category_ids: dict[str, str | None] = {}
+        for p in products:
+            if p.category:
+                if p.category not in cat_cache:
+                    cat_cache[p.category] = await self.resolve_category_id(p.category)
+                category_ids[p.ml_id] = cat_cache[p.category]
+
         if self._using_supabase:
             try:
-                remote_ids = await self._supabase.upsert_products_batch(products)
+                remote_ids = await self._supabase.upsert_products_batch(
+                    products,
+                    badge_ids=badge_ids,
+                    category_ids=category_ids,
+                )
                 # Espelha no SQLite com os mesmos UUIDs
                 await self._sqlite.upsert_products_batch(
-                    products, product_ids=remote_ids
+                    products,
+                    product_ids=remote_ids,
+                    badge_ids=badge_ids,
+                    category_ids=category_ids,
                 )
                 return remote_ids
             except SupabaseError as exc:
@@ -219,7 +274,11 @@ class StorageManager:
                 )
 
         # Fallback: SQLite gera UUIDs próprios
-        return await self._sqlite.upsert_products_batch(products)
+        return await self._sqlite.upsert_products_batch(
+            products,
+            badge_ids=badge_ids,
+            category_ids=category_ids,
+        )
 
     async def add_price_history_batch(self, entries: list[dict]) -> bool:
         """
@@ -239,9 +298,7 @@ class StorageManager:
             try:
                 return await self._supabase.add_price_history_batch(entries)
             except SupabaseError as exc:
-                logger.warning(
-                    "supabase_price_history_batch_failed", error=str(exc)
-                )
+                logger.warning("supabase_price_history_batch_failed", error=str(exc))
         return local_ok
 
     # ------------------------------------------------------------------

@@ -494,12 +494,14 @@ class TestDeduplication:
     async def test_skips_known_products(self, html_poly_cards):
         mock_storage = AsyncMock()
         # MLB111222333 já existe, os outros não
-        mock_storage.check_duplicate = AsyncMock(
-            side_effect=lambda ml_id: ml_id == "MLB111222333"
+        mock_storage.check_duplicates_batch = AsyncMock(return_value={"MLB111222333"})
+        mock_storage.upsert_products_batch = AsyncMock(
+            return_value={
+                "MLB444555666": "uuid-2",
+                "MLB777888999": "uuid-3",
+            }
         )
-        mock_storage.upsert_product = AsyncMock(return_value="uuid-new")
-        mock_storage.add_price_history = AsyncMock(return_value=True)
-        mock_storage.get_product_id = AsyncMock(return_value="uuid-new")
+        mock_storage.add_price_history_batch = AsyncMock(return_value=True)
         mock_storage.log_event = AsyncMock(return_value=True)
 
         scraper = MLScraper(storage=mock_storage)
@@ -516,13 +518,32 @@ class TestDeduplication:
             patch.object(scraper, "_start_browser", new_callable=AsyncMock),
             patch.object(scraper, "_close_browser", new_callable=AsyncMock),
             patch.object(
-                scraper, "_new_page", new_callable=AsyncMock, return_value=mock_page
+                scraper,
+                "_new_page",
+                new_callable=AsyncMock,
+                return_value=mock_page,
             ),
-            patch.object(scraper, "_goto", new_callable=AsyncMock, return_value=True),
-            patch.object(scraper, "_human_scroll", new_callable=AsyncMock),
-            patch.object(scraper, "_random_delay", new_callable=AsyncMock),
             patch.object(
-                scraper, "_is_blocked", new_callable=AsyncMock, return_value=False
+                scraper,
+                "_goto",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                scraper,
+                "_human_scroll",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                scraper,
+                "_random_delay",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                scraper,
+                "_is_blocked",
+                new_callable=AsyncMock,
+                return_value=False,
             ),
         ):
             products = await scraper.scrape()
@@ -531,10 +552,10 @@ class TestDeduplication:
         assert len(products) == 2
         assert all(p.ml_id != "MLB111222333" for p in products)
 
-        # check_duplicate chamado para todos os 3
-        assert mock_storage.check_duplicate.call_count == 3
-        # upsert_product chamado apenas para os 2 novos
-        assert mock_storage.upsert_product.call_count == 2
+        # check_duplicates_batch chamado 1 vez com todos os 3
+        mock_storage.check_duplicates_batch.assert_called_once()
+        # upsert_products_batch chamado 1 vez com os 2 novos
+        mock_storage.upsert_products_batch.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_storage_returns_all(self, html_poly_cards):
@@ -746,10 +767,15 @@ class TestScrapeIntegration:
     async def test_persistence_saves_all_products(self, html_poly_cards):
         """Verifica que cada produto novo é salvo via storage."""
         mock_storage = AsyncMock()
-        mock_storage.check_duplicate = AsyncMock(return_value=False)
-        mock_storage.upsert_product = AsyncMock(return_value="uuid-123")
-        mock_storage.add_price_history = AsyncMock(return_value=True)
-        mock_storage.get_product_id = AsyncMock(return_value="uuid-123")
+        mock_storage.check_duplicates_batch = AsyncMock(return_value=set())
+        mock_storage.upsert_products_batch = AsyncMock(
+            return_value={
+                "MLB111222333": "uuid-1",
+                "MLB444555666": "uuid-2",
+                "MLB777888999": "uuid-3",
+            }
+        )
+        mock_storage.add_price_history_batch = AsyncMock(return_value=True)
         mock_storage.log_event = AsyncMock(return_value=True)
 
         scraper = MLScraper(storage=mock_storage)
@@ -766,20 +792,39 @@ class TestScrapeIntegration:
             patch.object(scraper, "_start_browser", new_callable=AsyncMock),
             patch.object(scraper, "_close_browser", new_callable=AsyncMock),
             patch.object(
-                scraper, "_new_page", new_callable=AsyncMock, return_value=mock_page
+                scraper,
+                "_new_page",
+                new_callable=AsyncMock,
+                return_value=mock_page,
             ),
-            patch.object(scraper, "_goto", new_callable=AsyncMock, return_value=True),
-            patch.object(scraper, "_human_scroll", new_callable=AsyncMock),
-            patch.object(scraper, "_random_delay", new_callable=AsyncMock),
             patch.object(
-                scraper, "_is_blocked", new_callable=AsyncMock, return_value=False
+                scraper,
+                "_goto",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                scraper,
+                "_human_scroll",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                scraper,
+                "_random_delay",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                scraper,
+                "_is_blocked",
+                new_callable=AsyncMock,
+                return_value=False,
             ),
         ):
             products = await scraper.scrape()
 
         assert len(products) == 3
-        assert mock_storage.upsert_product.call_count == 3
-        assert mock_storage.add_price_history.call_count == 3
+        mock_storage.upsert_products_batch.assert_called_once()
+        mock_storage.add_price_history_batch.assert_called_once()
         # Log de sucesso ao final
         mock_storage.log_event.assert_any_call(
             "scrape_success",

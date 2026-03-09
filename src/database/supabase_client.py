@@ -97,6 +97,73 @@ class SupabaseClient:
             return False
 
     # ------------------------------------------------------------------
+    # badges
+    # ------------------------------------------------------------------
+
+    async def get_or_create_badge(self, name: str) -> Optional[str]:
+        """Retorna o ID do badge pelo nome. Cria se não existir."""
+        if not name:
+            return None
+        try:
+            result = (
+                await self._db.table("badges")
+                .select("id")
+                .eq("name", name)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return result.data[0]["id"]
+            # Não existe, cria
+            result = (
+                await self._db.table("badges")
+                .insert({"name": name})
+                .execute()
+            )
+            if result.data:
+                badge_id: str = result.data[0]["id"]
+                logger.debug("supabase_badge_created", name=name, badge_id=badge_id)
+                return badge_id
+            return None
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="get_or_create_badge"
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # categories
+    # ------------------------------------------------------------------
+
+    async def get_or_create_category(self, name: str) -> Optional[str]:
+        """Retorna o ID da categoria pelo nome. Cria se não existir."""
+        if not name:
+            return None
+        try:
+            result = (
+                await self._db.table("categories")
+                .select("id")
+                .eq("name", name)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return result.data[0]["id"]
+            result = (
+                await self._db.table("categories")
+                .insert({"name": name})
+                .execute()
+            )
+            if result.data:
+                cat_id: str = result.data[0]["id"]
+                logger.debug("supabase_category_created", name=name, category_id=cat_id)
+                return cat_id
+            return None
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="get_or_create_category"
+            ) from exc
+
+    # ------------------------------------------------------------------
     # products
     # ------------------------------------------------------------------
 
@@ -176,7 +243,10 @@ class SupabaseClient:
             ) from exc
 
     async def upsert_products_batch(
-        self, products: list["ScrapedProduct"]
+        self,
+        products: list["ScrapedProduct"],
+        badge_ids: dict[str, str | None] | None = None,
+        category_ids: dict[str, str | None] | None = None,
     ) -> dict[str, str]:
         """
         Upsert de múltiplos produtos em UMA única chamada.
@@ -185,12 +255,21 @@ class SupabaseClient:
         """
         if not products:
             return {}
+        badges_map = badge_ids or {}
+        cats_map = category_ids or {}
         # Deduplica por ml_id (Supabase rejeita ON CONFLICT com dupes na mesma batch)
         seen: dict[str, "ScrapedProduct"] = {}
         for p in products:
             seen[p.ml_id] = p
         unique_products = list(seen.values())
-        rows = [self._product_to_row(p) for p in unique_products]
+        rows = [
+            self._product_to_row(
+                p,
+                badge_id=badges_map.get(p.ml_id),
+                category_id=cats_map.get(p.ml_id),
+            )
+            for p in unique_products
+        ]
         try:
             result = (
                 await self._db.table("products")
@@ -546,7 +625,11 @@ class SupabaseClient:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _product_to_row(product: ScrapedProduct) -> dict:
+    def _product_to_row(
+        product: ScrapedProduct,
+        badge_id: str | None = None,
+        category_id: str | None = None,
+    ) -> dict:
         """
         Mapeia os campos do ScrapedProduct para as colunas da tabela products.
         Campos do ScrapedProduct → Colunas do banco:
@@ -556,9 +639,10 @@ class SupabaseClient:
           rating        → rating_stars
           review_count  → rating_count
           image_url     → thumbnail_url
+          category      → category_id  (resolvido externamente)
         """
         now = datetime.now(tz=timezone.utc).isoformat()
-        return {
+        row = {
             "ml_id":            product.ml_id,
             "title":            product.title,
             "current_price":    product.price,
@@ -569,8 +653,10 @@ class SupabaseClient:
             "free_shipping":    product.free_shipping,
             "thumbnail_url":    product.image_url,
             "product_url":      product.url,
-            "category":         product.category,
+            "category_id":      category_id,
+            "badge_id":         badge_id,
             # Supabase retorna first_seen_at inalterado no update via trigger
             "first_seen_at":    now,
             "last_seen_at":     now,
         }
+        return row

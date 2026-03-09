@@ -335,15 +335,11 @@ class MLScraper(BaseScraper):
                         [p.ml_id for p in page_products]
                     )
                     dupes_skipped += len(existing)
-                    new_products = [
-                        p for p in page_products if p.ml_id not in existing
-                    ]
+                    new_products = [p for p in page_products if p.ml_id not in existing]
 
                     if new_products:
                         # 1 upsert para todos os novos
-                        ids = await self._storage.upsert_products_batch(
-                            new_products
-                        )
+                        ids = await self._storage.upsert_products_batch(new_products)
 
                         # 1 insert para todo o histórico de preço
                         entries = [
@@ -548,6 +544,7 @@ class MLScraper(BaseScraper):
                 category=get_product_category(title),
                 image_url=image_url,
                 free_shipping=free_shipping,
+                badge=badge,
                 source=source.name,
             )
 

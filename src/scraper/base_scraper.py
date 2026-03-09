@@ -104,6 +104,7 @@ class ScrapedProduct:
     category: str = ""
     image_url: str = ""
     free_shipping: bool = False
+    badge: str = ""  # Ex: "Oferta do dia", "Mais vendido"
 
     # Controle interno
     scraped_at: float = field(default_factory=time.time)
@@ -127,6 +128,7 @@ class ScrapedProduct:
             "category": self.category,
             "image_url": self.image_url,
             "free_shipping": self.free_shipping,
+            "badge": self.badge,
             "scraped_at": self.scraped_at,
             "source": self.source,
         }

@@ -103,6 +103,18 @@ class SQLiteFallback:
     async def _create_schema(self) -> None:
         """Cria todas as tabelas e índices se ainda não existirem."""
         schema = """
+        CREATE TABLE IF NOT EXISTS badges (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL UNIQUE,
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS categories (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL UNIQUE,
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS products (
             id                TEXT PRIMARY KEY,
             ml_id             TEXT NOT NULL UNIQUE,
@@ -115,7 +127,8 @@ class SQLiteFallback:
             free_shipping     INTEGER DEFAULT 0,
             thumbnail_url     TEXT DEFAULT '',
             product_url       TEXT DEFAULT '',
-            category          TEXT DEFAULT '',
+            category_id       TEXT REFERENCES categories(id),
+            badge_id          TEXT REFERENCES badges(id),
             first_seen_at     TEXT DEFAULT (datetime('now')),
             last_seen_at      TEXT DEFAULT (datetime('now')),
             created_at        TEXT DEFAULT (datetime('now')),
@@ -170,6 +183,8 @@ class SQLiteFallback:
         CREATE INDEX IF NOT EXISTS idx_p_last_seen
             ON products(last_seen_at DESC);
         CREATE INDEX IF NOT EXISTS idx_p_synced ON products(synced);
+        CREATE INDEX IF NOT EXISTS idx_p_category_id ON products(category_id);
+        CREATE INDEX IF NOT EXISTS idx_p_badge_id ON products(badge_id);
         CREATE INDEX IF NOT EXISTS idx_ph_product
             ON price_history(product_id);
         CREATE INDEX IF NOT EXISTS idx_ph_recorded
@@ -197,6 +212,19 @@ class SQLiteFallback:
         await self._db.executescript(schema)
         await self._db.commit()
 
+        # Migrações incrementais para bancos já existentes
+        for col, ref in [
+            ("badge_id", "badges(id)"),
+            ("category_id", "categories(id)"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE products ADD COLUMN {col} TEXT REFERENCES {ref}"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # Coluna já existe
+
     # ------------------------------------------------------------------
     # Health check
     # ------------------------------------------------------------------
@@ -209,6 +237,58 @@ class SQLiteFallback:
         except Exception as exc:
             logger.warning("sqlite_ping_failed", error=str(exc))
             return False
+
+    # ------------------------------------------------------------------
+    # badges
+    # ------------------------------------------------------------------
+
+    async def get_or_create_badge(self, name: str) -> Optional[str]:
+        """Retorna o ID do badge pelo nome. Cria se não existir."""
+        if not name:
+            return None
+        try:
+            cursor = await self._db.execute(
+                "SELECT id FROM badges WHERE name = ?", (name,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                return row["id"]
+            badge_id = str(uuid.uuid4())
+            await self._db.execute(
+                "INSERT INTO badges (id, name) VALUES (?, ?)",
+                (badge_id, name),
+            )
+            await self._db.commit()
+            logger.debug("sqlite_badge_created", name=name, badge_id=badge_id)
+            return badge_id
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_or_create_badge") from exc
+
+    # ------------------------------------------------------------------
+    # categories
+    # ------------------------------------------------------------------
+
+    async def get_or_create_category(self, name: str) -> Optional[str]:
+        """Retorna o ID da categoria pelo nome. Cria se não existir."""
+        if not name:
+            return None
+        try:
+            cursor = await self._db.execute(
+                "SELECT id FROM categories WHERE name = ?", (name,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                return row["id"]
+            cat_id = str(uuid.uuid4())
+            await self._db.execute(
+                "INSERT INTO categories (id, name) VALUES (?, ?)",
+                (cat_id, name),
+            )
+            await self._db.commit()
+            logger.debug("sqlite_category_created", name=name, category_id=cat_id)
+            return cat_id
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_or_create_category") from exc
 
     # ------------------------------------------------------------------
     # products
@@ -250,7 +330,7 @@ class SQLiteFallback:
                         discount_percent=?,
                         rating_stars=?, rating_count=?,
                         free_shipping=?, thumbnail_url=?,
-                        product_url=?, category=?,
+                        product_url=?,
                         first_seen_at=?, last_seen_at=?, synced=0
                     WHERE ml_id=?
                     """,
@@ -264,7 +344,6 @@ class SQLiteFallback:
                         int(product.free_shipping),
                         product.image_url,
                         product.url,
-                        product.category,
                         first_seen,
                         now,
                         product.ml_id,
@@ -278,9 +357,9 @@ class SQLiteFallback:
                         id, ml_id, title, current_price, original_price,
                         discount_percent,
                         rating_stars, rating_count,
-                        free_shipping, thumbnail_url, product_url, category,
+                        free_shipping, thumbnail_url, product_url,
                         first_seen_at, last_seen_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         product_id,
@@ -294,7 +373,6 @@ class SQLiteFallback:
                         int(product.free_shipping),
                         product.image_url,
                         product.url,
-                        product.category,
                         now,
                         now,
                     ),
@@ -326,14 +404,14 @@ class SQLiteFallback:
             rows = await cursor.fetchall()
             return {row["ml_id"] for row in rows}
         except Exception as exc:
-            raise SQLiteError(
-                str(exc), operation="check_duplicates_batch"
-            ) from exc
+            raise SQLiteError(str(exc), operation="check_duplicates_batch") from exc
 
     async def upsert_products_batch(
         self,
         products: list[ScrapedProduct],
         product_ids: dict[str, str] | None = None,
+        badge_ids: dict[str, str | None] | None = None,
+        category_ids: dict[str, str | None] | None = None,
     ) -> dict[str, str]:
         """
         Upsert de múltiplos produtos em 1 transação (1 commit).
@@ -356,18 +434,22 @@ class SQLiteFallback:
         now = datetime.now(tz=timezone.utc).isoformat()
         result_ids: dict[str, str] = {}
         ids_map = product_ids or {}
+        badges_map = badge_ids or {}
+        cats_map = category_ids or {}
 
         try:
             # Busca todos os existentes em 1 query
             ml_ids = [p.ml_id for p in unique_products]
             placeholders = ",".join("?" * len(ml_ids))
             cursor = await self._db.execute(
-                f"SELECT id, ml_id, first_seen_at FROM products WHERE ml_id IN ({placeholders})",  # noqa: S608
+                f"SELECT id, ml_id, first_seen_at FROM products WHERE ml_id IN ({placeholders})",  # noqa: S608, E501
                 ml_ids,
             )
             existing = {row["ml_id"]: dict(row) for row in await cursor.fetchall()}
 
             for p in unique_products:
+                b_id = badges_map.get(p.ml_id)
+                c_id = cats_map.get(p.ml_id)
                 if p.ml_id in existing:
                     pid = existing[p.ml_id]["id"]
                     first_seen = existing[p.ml_id]["first_seen_at"]
@@ -378,17 +460,25 @@ class SQLiteFallback:
                             discount_percent=?,
                             rating_stars=?, rating_count=?,
                             free_shipping=?, thumbnail_url=?,
-                            product_url=?, category=?,
+                            product_url=?, category_id=?, badge_id=?,
                             first_seen_at=?, last_seen_at=?, synced=0
                         WHERE ml_id=?
                         """,
                         (
-                            p.title, p.price, p.original_price,
+                            p.title,
+                            p.price,
+                            p.original_price,
                             int(p.discount_pct),
-                            p.rating, p.review_count,
-                            int(p.free_shipping), p.image_url,
-                            p.url, p.category,
-                            first_seen, now, p.ml_id,
+                            p.rating,
+                            p.review_count,
+                            int(p.free_shipping),
+                            p.image_url,
+                            p.url,
+                            c_id,
+                            b_id,
+                            first_seen,
+                            now,
+                            p.ml_id,
                         ),
                     )
                     result_ids[p.ml_id] = pid
@@ -397,18 +487,32 @@ class SQLiteFallback:
                     await self._db.execute(
                         """
                         INSERT INTO products (
-                            id, ml_id, title, current_price, original_price,
-                            discount_percent,
+                            id, ml_id, title, current_price,
+                            original_price, discount_percent,
                             rating_stars, rating_count,
-                            free_shipping, thumbnail_url, product_url, category,
-                            first_seen_at, last_seen_at
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            free_shipping, thumbnail_url,
+                            product_url, category_id,
+                            badge_id, first_seen_at, last_seen_at
+                        ) VALUES (
+                            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                        )
                         """,
                         (
-                            pid, p.ml_id, p.title, p.price, p.original_price,
-                            int(p.discount_pct), p.rating, p.review_count,
-                            int(p.free_shipping), p.image_url, p.url, p.category,
-                            now, now,
+                            pid,
+                            p.ml_id,
+                            p.title,
+                            p.price,
+                            p.original_price,
+                            int(p.discount_pct),
+                            p.rating,
+                            p.review_count,
+                            int(p.free_shipping),
+                            p.image_url,
+                            p.url,
+                            c_id,
+                            b_id,
+                            now,
+                            now,
                         ),
                     )
                     result_ids[p.ml_id] = pid
@@ -418,9 +522,7 @@ class SQLiteFallback:
             return result_ids
 
         except Exception as exc:
-            raise SQLiteError(
-                str(exc), operation="upsert_products_batch"
-            ) from exc
+            raise SQLiteError(str(exc), operation="upsert_products_batch") from exc
 
     async def add_price_history_batch(self, entries: list[dict]) -> bool:
         """Insere múltiplas entradas de histórico de preço em 1 commit."""
@@ -449,9 +551,7 @@ class SQLiteFallback:
             logger.debug("sqlite_price_history_batch_added", count=len(entries))
             return True
         except Exception as exc:
-            raise SQLiteError(
-                str(exc), operation="add_price_history_batch"
-            ) from exc
+            raise SQLiteError(str(exc), operation="add_price_history_batch") from exc
 
     async def product_exists(self, product_id: str) -> bool:
         """Verifica se um produto existe no banco local pelo UUID."""
@@ -634,9 +734,7 @@ class SQLiteFallback:
             )
             return await cursor.fetchone() is not None
         except Exception as exc:
-            raise SQLiteError(
-                str(exc), operation="has_recent_sends"
-            ) from exc
+            raise SQLiteError(str(exc), operation="has_recent_sends") from exc
 
     async def mark_as_sent(
         self,
