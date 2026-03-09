@@ -89,6 +89,8 @@ class StorageManager:
                 logger.info("storage_backend", backend="supabase")
                 # Seed de lookup tables no Supabase
                 await self._seed_supabase()
+                # Sincroniza UUIDs do SQLite com Supabase (evita FK mismatch)
+                await self._sync_lookup_uuids()
                 # Preload caches de lookup
                 await self._preload_caches()
                 # Auto-sync: envia pendentes do SQLite ao Supabase
@@ -124,6 +126,21 @@ class StorageManager:
             )
         except SupabaseError as exc:
             logger.warning("supabase_seed_failed", error=str(exc))
+
+    async def _sync_lookup_uuids(self) -> None:
+        """Sincroniza UUIDs de badges/categories do SQLite com o Supabase.
+
+        Quando ambos os backends estão ativos, o cache usa UUIDs do Supabase.
+        Se o SQLite tiver UUIDs diferentes (gerados localmente no seed),
+        as FKs em products falharão. Este método garante que ambos usem
+        os mesmos UUIDs.
+        """
+        try:
+            supa_badges = await self._supabase.get_all_badges()
+            supa_categories = await self._supabase.get_all_categories()
+            await self._sqlite.sync_lookup_ids(supa_badges, supa_categories)
+        except Exception as exc:
+            logger.warning("lookup_uuid_sync_failed", error=str(exc))
 
     async def _preload_caches(self) -> None:
         """Carrega badges e categories em memória para evitar queries repetidas."""

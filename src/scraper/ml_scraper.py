@@ -43,7 +43,7 @@ class ScrapeSource:
 
     name: str  # Ex: "ofertas_do_dia"
     url: str  # URL base da fonte
-    max_pages: int = 1
+    max_pages: int = 10
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ class MLScraper(BaseScraper):
             ScrapeSource(
                 name="ofertas_do_dia",
                 url=OFERTAS_URL,
-                max_pages=1,
+                max_pages=10,
             )
         ]
 

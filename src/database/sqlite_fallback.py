@@ -251,6 +251,80 @@ class SQLiteFallback:
         except Exception as exc:
             logger.warning("sqlite_seed_failed", error=str(exc))
 
+    async def sync_lookup_ids(
+        self,
+        remote_badges: dict[str, str],
+        remote_categories: dict[str, str],
+    ) -> None:
+        """Atualiza UUIDs locais de badges/categories para igualar os do Supabase.
+
+        Isso garante que badge_id e category_id resolvidos pelo Supabase
+        funcionem como FK válida no SQLite (ambos usam o mesmo UUID).
+
+        Também atualiza referências em products (CASCADE manual).
+
+        Args:
+            remote_badges: Mapeamento {nome: uuid_supabase} dos badges.
+            remote_categories: Mapeamento {nome: uuid_supabase} das categorias.
+        """
+        try:
+            # Sync badges
+            for name, remote_id in remote_badges.items():
+                cursor = await self._db.execute(
+                    "SELECT id FROM badges WHERE name = ?", (name,)
+                )
+                row = await cursor.fetchone()
+                if row and row["id"] != remote_id:
+                    local_id = row["id"]
+                    # Atualiza FK em products primeiro
+                    await self._db.execute(
+                        "UPDATE products SET badge_id = ? WHERE badge_id = ?",
+                        (remote_id, local_id),
+                    )
+                    # Atualiza o badge
+                    await self._db.execute(
+                        "UPDATE badges SET id = ? WHERE name = ?",
+                        (remote_id, name),
+                    )
+                elif not row:
+                    await self._db.execute(
+                        "INSERT INTO badges (id, name) VALUES (?, ?)",
+                        (remote_id, name),
+                    )
+
+            # Sync categories
+            for name, remote_id in remote_categories.items():
+                cursor = await self._db.execute(
+                    "SELECT id FROM categories WHERE name = ?", (name,)
+                )
+                row = await cursor.fetchone()
+                if row and row["id"] != remote_id:
+                    local_id = row["id"]
+                    # Atualiza FK em products primeiro
+                    await self._db.execute(
+                        "UPDATE products SET category_id = ? WHERE category_id = ?",
+                        (remote_id, local_id),
+                    )
+                    # Atualiza a category
+                    await self._db.execute(
+                        "UPDATE categories SET id = ? WHERE name = ?",
+                        (remote_id, name),
+                    )
+                elif not row:
+                    await self._db.execute(
+                        "INSERT INTO categories (id, name) VALUES (?, ?)",
+                        (remote_id, name),
+                    )
+
+            await self._db.commit()
+            logger.debug(
+                "sqlite_lookup_ids_synced",
+                badges=len(remote_badges),
+                categories=len(remote_categories),
+            )
+        except Exception as exc:
+            logger.warning("sqlite_lookup_sync_failed", error=str(exc))
+
     # ------------------------------------------------------------------
     # Health check
     # ------------------------------------------------------------------
