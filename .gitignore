@@ -26,3 +26,6 @@ logs/
 
 # macOS
 .DS_Store
+
+# Claude
+.claude/
