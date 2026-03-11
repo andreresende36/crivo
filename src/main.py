@@ -130,7 +130,7 @@ async def run_pipeline() -> dict:
                         "product_id": ids[s.product.ml_id],
                         "rule_score": int(s.score),
                         "final_score": int(s.score),
-                        "status": "pending",
+                        "status": "approved",
                     }
                     for s in scored_products
                     if s.product.ml_id in ids
@@ -158,7 +158,7 @@ async def run_pipeline() -> dict:
                             product_id=product_id,
                             rule_score=int(s.score),
                             final_score=int(s.score),
-                            status="pending",
+                            status="approved",
                         )
                         stats["saved"] += 1
                     except Exception as exc2:

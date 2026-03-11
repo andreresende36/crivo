@@ -96,6 +96,7 @@ _EVENT_CONFIG = {
     "dedup_done": ("🔎", _C.CYAN, None),
     "fake_filter_done": ("🛡️ ", _C.CYAN, None),
     "batch_fake_check": ("🛡️ ", _C.CYAN, None),
+    "product_rejected": ("__CUSTOM__", None, None),
     "batch_evaluated": ("🎯", _C.B_CYAN, "SCORING FINALIZADO"),
     # ── Banco de Dados ────────────────────────────────────────────────
     "save_failed": ("💾", _C.RED, None),
@@ -143,6 +144,7 @@ _SILENT_EVENTS = {
     "auto_sync_done",
     "product_scored",
     "fake_discount_check",
+    "price_history_skipped_unchanged",
 }
 
 
@@ -297,6 +299,51 @@ def _render_pipeline_summary(ts: str, kv: dict) -> str:
     return f"{ts}  " + "\n".join(lines)
 
 
+def _render_product_rejected(ts: str, kv: dict) -> str:
+    """Renderiza rejeição de produto com breakdown de score e link."""
+    thin = f"{_C.YELLOW}{'─' * 60}{_C.RESET}"
+    ml_id = kv.get("ml_id", "?")
+    score = kv.get("score", 0)
+    reason = kv.get("reason", "—")
+    url = kv.get("url", "")
+    breakdown = kv.get("breakdown") or {}
+
+    lines = [
+        f"\n{thin}",
+        f"🚫  {_C.B_YELLOW}REJEITADO{_C.RESET}  "
+        f"{_C.DIM}ml_id={_C.RESET}{_C.WHITE}{ml_id}{_C.RESET}  "
+        f"{_C.DIM}score={_C.RESET}{_C.B_RED}{score}{_C.RESET}",
+        f"   {_C.DIM}▸ Motivo:{_C.RESET} {_C.YELLOW}{reason}{_C.RESET}",
+    ]
+
+    if breakdown:
+        _BD_LABELS = [
+            ("discount",     "Desconto        "),
+            ("badge",        "Badge           "),
+            ("rating",       "Avaliação       "),
+            ("reviews",      "Reviews         "),
+            ("free_shipping","Frete grátis    "),
+            ("installments", "Sem juros       "),
+            ("title",        "Título          "),
+        ]
+        lines.append(f"   {_C.DIM}▸ Breakdown:{_C.RESET}")
+        for key, label in _BD_LABELS:
+            val = breakdown.get(key, 0)
+            bar_filled = int(val / 30 * 10) if key == "discount" else int(val / 15 * 10) if key in ("badge", "rating") else int(val / 10 * 10)
+            bar = f"{'█' * bar_filled}{'░' * (10 - bar_filled)}"
+            color = _C.B_GREEN if val > 0 else _C.DIM
+            lines.append(
+                f"     {_C.DIM}{label}{_C.RESET}"
+                f"{color}{bar} {val:>5.1f}pt{_C.RESET}"
+            )
+
+    if url:
+        lines.append(f"   {_C.DIM}▸ Link:{_C.RESET} {url}")
+
+    lines.append(thin)
+    return f"{ts}  " + "\n".join(lines)
+
+
 def _dealhunter_renderer(logger, method_name, event_dict):
     """
     Renderer customizado do DealHunter para o console.
@@ -329,6 +376,9 @@ def _dealhunter_renderer(logger, method_name, event_dict):
         # Custom renderer para pipeline_summary
         if event == "pipeline_summary":
             return _render_pipeline_summary(ts, kv)
+
+        if event == "product_rejected":
+            return _render_product_rejected(ts, kv)
 
         if title:
             # Banner destacado

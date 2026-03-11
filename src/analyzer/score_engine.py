@@ -259,6 +259,26 @@ class ScoreEngine:
         approved = [s for s in scored if s.passed]
         approved.sort(key=lambda s: s.score, reverse=True)
 
+        for s in scored:
+            if not s.passed:
+                b = s.breakdown
+                logger.info(
+                    "product_rejected",
+                    ml_id=s.product.ml_id,
+                    score=s.score,
+                    reason=s.reject_reason,
+                    url=s.product.url,
+                    breakdown={
+                        "discount": b.discount.final_score,
+                        "badge": b.badge.final_score,
+                        "rating": b.rating.final_score,
+                        "reviews": b.reviews.final_score,
+                        "free_shipping": b.free_shipping.final_score,
+                        "installments": b.installments.final_score,
+                        "title": b.title_quality.final_score,
+                    },
+                )
+
         logger.info(
             "batch_evaluated",
             total=len(products),

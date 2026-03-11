@@ -210,6 +210,66 @@ class SQLiteFallback:
         CREATE INDEX IF NOT EXISTS idx_sl_created
             ON system_logs(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_sl_synced ON system_logs(synced);
+
+        -- Views (SQLite usa datetime() em vez de NOW() - INTERVAL)
+        CREATE VIEW IF NOT EXISTS vw_approved_unsent AS
+        SELECT
+            p.id            AS product_id,
+            p.ml_id,
+            p.title,
+            p.current_price,
+            p.original_price,
+            p.discount_percent,
+            p.free_shipping,
+            p.thumbnail_url,
+            p.product_url,
+            c.name          AS category,
+            so.id           AS scored_offer_id,
+            so.final_score,
+            so.ai_description,
+            so.scored_at
+        FROM scored_offers so
+        JOIN products p ON p.id = so.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE so.status = 'approved'
+          AND so.final_score >= 60
+          AND NOT EXISTS (
+              SELECT 1 FROM sent_offers se
+              WHERE se.scored_offer_id = so.id
+                AND se.sent_at >= datetime('now', '-24 hours')
+          )
+        ORDER BY so.final_score DESC;
+
+        CREATE VIEW IF NOT EXISTS vw_last_24h_summary AS
+        SELECT
+            (SELECT COUNT(*) FROM products      WHERE last_seen_at >= datetime('now', '-24 hours')) AS products_scraped,
+            (SELECT COUNT(*) FROM scored_offers WHERE scored_at   >= datetime('now', '-24 hours')) AS offers_scored,
+            (SELECT COUNT(*) FROM scored_offers WHERE scored_at   >= datetime('now', '-24 hours')
+                                                 AND status = 'approved')                          AS offers_approved,
+            (SELECT COUNT(*) FROM sent_offers   WHERE sent_at     >= datetime('now', '-24 hours')) AS offers_sent,
+            (SELECT ROUND(AVG(final_score), 1)
+               FROM scored_offers WHERE scored_at >= datetime('now', '-24 hours'))                 AS avg_score,
+            (SELECT MAX(discount_percent)
+               FROM products WHERE last_seen_at  >= datetime('now', '-24 hours'))                  AS max_discount_pct;
+
+        CREATE VIEW IF NOT EXISTS vw_top_deals AS
+        SELECT
+            p.ml_id,
+            p.title,
+            p.current_price,
+            p.original_price,
+            p.discount_percent,
+            p.free_shipping,
+            c.name          AS category,
+            so.final_score,
+            p.product_url
+        FROM products p
+        JOIN scored_offers so ON so.product_id = p.id
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE p.last_seen_at >= datetime('now', '-6 hours')
+          AND so.status = 'approved'
+        ORDER BY so.final_score DESC, p.discount_percent DESC
+        LIMIT 20;
         """
         await self._db.executescript(schema)
         await self._db.commit()
@@ -849,6 +909,40 @@ class SQLiteFallback:
             return True
         except Exception as exc:
             raise SQLiteError(str(exc), operation="add_price_history") from exc
+
+    async def get_last_prices_batch(
+        self, product_ids: list[str]
+    ) -> dict[str, tuple[float, float | None]]:
+        """
+        Retorna o último preço registrado para cada product_id.
+        Usado para evitar gravar entradas duplicadas em price_history.
+
+        Returns:
+            {product_id: (price, original_price)} — apenas para produtos com histórico.
+        """
+        if not product_ids:
+            return {}
+        placeholders = ",".join("?" * len(product_ids))
+        try:
+            cursor = await self._db.execute(
+                f"""
+                SELECT ph.product_id, ph.price, ph.original_price
+                FROM price_history ph
+                INNER JOIN (
+                    SELECT product_id, MAX(recorded_at) AS max_at
+                    FROM price_history
+                    WHERE product_id IN ({placeholders})
+                    GROUP BY product_id
+                ) latest
+                ON ph.product_id = latest.product_id
+                AND ph.recorded_at = latest.max_at
+                """,  # noqa: S608
+                product_ids,
+            )
+            rows = await cursor.fetchall()
+            return {row["product_id"]: (row["price"], row["original_price"]) for row in rows}
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_last_prices_batch") from exc
 
     async def get_price_history(self, product_id: str, days: int = 30) -> list[dict]:
         """Retorna histórico de preços dos últimos N dias."""

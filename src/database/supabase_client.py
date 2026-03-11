@@ -455,8 +455,10 @@ class SupabaseClient:
         if not entries:
             return []
         now = datetime.now(tz=timezone.utc).isoformat()
-        rows = [
-            {
+        # Deduplica por product_id — último registro prevalece
+        deduped: dict[str, dict] = {}
+        for e in entries:
+            deduped[e["product_id"]] = {
                 "product_id": e["product_id"],
                 "rule_score": e["rule_score"],
                 "ai_score": e.get("ai_score"),
@@ -465,8 +467,7 @@ class SupabaseClient:
                 "status": e["status"],
                 "scored_at": now,
             }
-            for e in entries
-        ]
+        rows = list(deduped.values())
         try:
             result = await self._db.table("scored_offers").upsert(rows, on_conflict="product_id").execute()
             if not result.data:

@@ -429,20 +429,41 @@ class StorageManager:
     async def add_price_history_batch(self, entries: list[dict]) -> bool:
         """
         Insere múltiplas entradas de histórico de preço (1 chamada ao invés de N).
+        Só grava se o preço ou original_price mudou em relação ao último registro.
         entries: lista de dicts com keys: product_id, price, original_price.
         """
         if not entries:
             return True
 
+        # Filtra entradas cujo preço não mudou desde o último registro
+        product_ids = [e["product_id"] for e in entries]
+        try:
+            last_prices = await self._sqlite.get_last_prices_batch(product_ids)
+        except SQLiteError:
+            last_prices = {}
+
+        changed = [
+            e for e in entries
+            if e["product_id"] not in last_prices
+            or last_prices[e["product_id"]] != (e["price"], e.get("original_price"))
+        ]
+
+        skipped = len(entries) - len(changed)
+        if skipped:
+            logger.info("price_history_skipped_unchanged", skipped=skipped, inserted=len(changed))
+
+        if not changed:
+            return True
+
         local_ok = False
         try:
-            local_ok = await self._sqlite.add_price_history_batch(entries)
+            local_ok = await self._sqlite.add_price_history_batch(changed)
         except SQLiteError as exc:
             logger.warning("sqlite_price_history_batch_failed", error=str(exc))
 
         if self._using_supabase:
             try:
-                return await self._supabase.add_price_history_batch(entries)
+                return await self._supabase.add_price_history_batch(changed)
             except SupabaseError as exc:
                 logger.warning("supabase_price_history_batch_failed", error=str(exc))
         return local_ok
