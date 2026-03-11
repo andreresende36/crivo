@@ -30,7 +30,7 @@ import structlog
 from src.config import settings
 from src.scraper.base_scraper import ScrapedProduct
 from .exceptions import SQLiteError
-from .seeds import BADGES, CATEGORIES
+from .seeds import BADGES, CATEGORIES, MARKETPLACES
 
 if TYPE_CHECKING:
     from .supabase_client import SupabaseClient
@@ -116,6 +116,12 @@ class SQLiteFallback:
             created_at  TEXT DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS marketplaces (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL UNIQUE,
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS products (
             id                TEXT PRIMARY KEY,
             ml_id             TEXT NOT NULL UNIQUE,
@@ -131,6 +137,7 @@ class SQLiteFallback:
             product_url       TEXT DEFAULT '',
             category_id       TEXT REFERENCES categories(id),
             badge_id          TEXT REFERENCES badges(id),
+            marketplace_id    TEXT REFERENCES marketplaces(id),
             first_seen_at     TEXT DEFAULT (datetime('now')),
             last_seen_at      TEXT DEFAULT (datetime('now')),
             created_at        TEXT DEFAULT (datetime('now')),
@@ -278,6 +285,7 @@ class SQLiteFallback:
         for col, ref in [
             ("badge_id", "TEXT REFERENCES badges(id)"),
             ("category_id", "TEXT REFERENCES categories(id)"),
+            ("marketplace_id", "TEXT REFERENCES marketplaces(id)"),
             ("installments_without_interest", "INTEGER DEFAULT 0"),
         ]:
             try:
@@ -286,11 +294,21 @@ class SQLiteFallback:
             except Exception:
                 pass  # Coluna já existe
 
+        # Índice criado aqui (e não no executescript) pois depende da
+        # migração incremental que adiciona marketplace_id em bancos já existentes
+        try:
+            await self._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_p_marketplace_id ON products(marketplace_id)"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
+
         # Seed de dados canônicos (idempotente)
         await self._seed_lookup_tables()
 
     async def _seed_lookup_tables(self) -> None:
-        """Insere badges e categories canônicos definidos em seeds.py."""
+        """Insere badges, categories e marketplaces canônicos definidos em seeds.py."""
         try:
             for name in BADGES:
                 await self._db.execute(
@@ -302,11 +320,17 @@ class SQLiteFallback:
                     "INSERT OR IGNORE INTO categories (id, name) VALUES (?, ?)",
                     (str(uuid.uuid4()), name),
                 )
+            for name in MARKETPLACES:
+                await self._db.execute(
+                    "INSERT OR IGNORE INTO marketplaces (id, name) VALUES (?, ?)",
+                    (str(uuid.uuid4()), name),
+                )
             await self._db.commit()
             logger.debug(
                 "sqlite_seeds_applied",
                 badges=len(BADGES),
                 categories=len(CATEGORIES),
+                marketplaces=len(MARKETPLACES),
             )
         except Exception as exc:
             logger.warning("sqlite_seed_failed", error=str(exc))
@@ -315,18 +339,22 @@ class SQLiteFallback:
         self,
         remote_badges: dict[str, str],
         remote_categories: dict[str, str],
+        remote_marketplaces: dict[str, str] | None = None,
     ) -> None:
-        """Atualiza UUIDs locais de badges/categories para igualar os do Supabase.
+        """Atualiza UUIDs locais de badges/categories/marketplaces para igualar os do Supabase.
 
-        Isso garante que badge_id e category_id resolvidos pelo Supabase
-        funcionem como FK válida no SQLite (ambos usam o mesmo UUID).
+        Isso garante que badge_id, category_id e marketplace_id resolvidos pelo
+        Supabase funcionem como FK válida no SQLite (ambos usam o mesmo UUID).
 
         Também atualiza referências em products (CASCADE manual).
 
         Args:
             remote_badges: Mapeamento {nome: uuid_supabase} dos badges.
             remote_categories: Mapeamento {nome: uuid_supabase} das categorias.
+            remote_marketplaces: Mapeamento {nome: uuid_supabase} dos marketplaces.
         """
+        if remote_marketplaces is None:
+            remote_marketplaces = {}
         try:
             # Sync badges
             for name, remote_id in remote_badges.items():
@@ -336,12 +364,10 @@ class SQLiteFallback:
                 row = await cursor.fetchone()
                 if row and row["id"] != remote_id:
                     local_id = row["id"]
-                    # Atualiza FK em products primeiro
                     await self._db.execute(
                         "UPDATE products SET badge_id = ? WHERE badge_id = ?",
                         (remote_id, local_id),
                     )
-                    # Atualiza o badge
                     await self._db.execute(
                         "UPDATE badges SET id = ? WHERE name = ?",
                         (remote_id, name),
@@ -360,12 +386,10 @@ class SQLiteFallback:
                 row = await cursor.fetchone()
                 if row and row["id"] != remote_id:
                     local_id = row["id"]
-                    # Atualiza FK em products primeiro
                     await self._db.execute(
                         "UPDATE products SET category_id = ? WHERE category_id = ?",
                         (remote_id, local_id),
                     )
-                    # Atualiza a category
                     await self._db.execute(
                         "UPDATE categories SET id = ? WHERE name = ?",
                         (remote_id, name),
@@ -376,11 +400,34 @@ class SQLiteFallback:
                         (remote_id, name),
                     )
 
+            # Sync marketplaces
+            for name, remote_id in remote_marketplaces.items():
+                cursor = await self._db.execute(
+                    "SELECT id FROM marketplaces WHERE name = ?", (name,)
+                )
+                row = await cursor.fetchone()
+                if row and row["id"] != remote_id:
+                    local_id = row["id"]
+                    await self._db.execute(
+                        "UPDATE products SET marketplace_id = ? WHERE marketplace_id = ?",
+                        (remote_id, local_id),
+                    )
+                    await self._db.execute(
+                        "UPDATE marketplaces SET id = ? WHERE name = ?",
+                        (remote_id, name),
+                    )
+                elif not row:
+                    await self._db.execute(
+                        "INSERT INTO marketplaces (id, name) VALUES (?, ?)",
+                        (remote_id, name),
+                    )
+
             await self._db.commit()
             logger.debug(
                 "sqlite_lookup_ids_synced",
                 badges=len(remote_badges),
                 categories=len(remote_categories),
+                marketplaces=len(remote_marketplaces),
             )
         except Exception as exc:
             logger.warning("sqlite_lookup_sync_failed", error=str(exc))
@@ -531,6 +578,66 @@ class SQLiteFallback:
                 "sqlite_ensure_category_id_failed", name=name, error=str(exc)
             )
 
+    async def get_all_marketplaces(self) -> dict[str, str]:
+        """Retorna todos os marketplaces como {nome: uuid}."""
+        try:
+            cursor = await self._db.execute("SELECT id, name FROM marketplaces")
+            rows = await cursor.fetchall()
+            return {row["name"]: row["id"] for row in rows}
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_all_marketplaces") from exc
+
+    async def get_or_create_marketplace(self, name: str) -> Optional[str]:
+        """Retorna o ID do marketplace pelo nome. Cria se não existir."""
+        if not name:
+            return None
+        try:
+            cursor = await self._db.execute(
+                "SELECT id FROM marketplaces WHERE name = ?", (name,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                return row["id"]
+            mp_id = str(uuid.uuid4())
+            await self._db.execute(
+                "INSERT INTO marketplaces (id, name) VALUES (?, ?)",
+                (mp_id, name),
+            )
+            await self._db.commit()
+            logger.debug("sqlite_marketplace_created", name=name, marketplace_id=mp_id)
+            return mp_id
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_or_create_marketplace") from exc
+
+    async def ensure_marketplace_id(self, name: str, marketplace_id: str) -> None:
+        """Garante que o marketplace exista no SQLite com o UUID especificado (do Supabase)."""
+        try:
+            cursor = await self._db.execute(
+                "SELECT id FROM marketplaces WHERE name = ?", (name,)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                await self._db.execute(
+                    "INSERT OR IGNORE INTO marketplaces (id, name) VALUES (?, ?)",
+                    (marketplace_id, name),
+                )
+                await self._db.commit()
+            elif row["id"] != marketplace_id:
+                local_id = row["id"]
+                await self._db.execute(
+                    "UPDATE products SET marketplace_id = ? WHERE marketplace_id = ?",
+                    (marketplace_id, local_id),
+                )
+                await self._db.execute(
+                    "UPDATE marketplaces SET id = ? WHERE name = ?",
+                    (marketplace_id, name),
+                )
+                await self._db.commit()
+        except Exception as exc:
+            logger.warning(
+                "sqlite_ensure_marketplace_id_failed", name=name, error=str(exc)
+            )
+
     # ------------------------------------------------------------------
     # products
     # ------------------------------------------------------------------
@@ -541,6 +648,7 @@ class SQLiteFallback:
         product_id: Optional[str] = None,
         badge_id: Optional[str] = None,
         category_id: Optional[str] = None,
+        marketplace_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         Insere ou atualiza um produto pelo ml_id.
@@ -577,7 +685,7 @@ class SQLiteFallback:
                         discount_percent=?,
                         rating_stars=?, rating_count=?,
                         free_shipping=?, installments_without_interest=?, thumbnail_url=?,
-                        product_url=?, category_id=?, badge_id=?,
+                        product_url=?, category_id=?, badge_id=?, marketplace_id=?,
                         first_seen_at=?, last_seen_at=?, synced=0
                     WHERE ml_id=?
                     """,
@@ -594,6 +702,7 @@ class SQLiteFallback:
                         product.url,
                         category_id,
                         badge_id,
+                        marketplace_id,
                         first_seen,
                         now,
                         product.ml_id,
@@ -608,9 +717,9 @@ class SQLiteFallback:
                         discount_percent,
                         rating_stars, rating_count,
                         free_shipping, installments_without_interest, thumbnail_url, product_url,
-                        category_id, badge_id,
+                        category_id, badge_id, marketplace_id,
                         first_seen_at, last_seen_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         product_id,
@@ -627,6 +736,7 @@ class SQLiteFallback:
                         product.url,
                         category_id,
                         badge_id,
+                        marketplace_id,
                         now,
                         now,
                     ),
@@ -666,6 +776,7 @@ class SQLiteFallback:
         product_ids: dict[str, str] | None = None,
         badge_ids: dict[str, str | None] | None = None,
         category_ids: dict[str, str | None] | None = None,
+        marketplace_ids: dict[str, str | None] | None = None,
     ) -> dict[str, str]:
         """
         Upsert de múltiplos produtos em 1 transação (1 commit).
@@ -690,6 +801,7 @@ class SQLiteFallback:
         ids_map = product_ids or {}
         badges_map = badge_ids or {}
         cats_map = category_ids or {}
+        mps_map = marketplace_ids or {}
 
         try:
             # Busca todos os existentes em 1 query
@@ -704,6 +816,7 @@ class SQLiteFallback:
             for p in unique_products:
                 b_id = badges_map.get(p.ml_id)
                 c_id = cats_map.get(p.ml_id)
+                mp_id = mps_map.get(p.ml_id)
                 if p.ml_id in existing:
                     pid = existing[p.ml_id]["id"]
                     first_seen = existing[p.ml_id]["first_seen_at"]
@@ -714,7 +827,7 @@ class SQLiteFallback:
                             discount_percent=?,
                             rating_stars=?, rating_count=?,
                             free_shipping=?, installments_without_interest=?, thumbnail_url=?,
-                            product_url=?, category_id=?, badge_id=?,
+                            product_url=?, category_id=?, badge_id=?, marketplace_id=?,
                             first_seen_at=?, last_seen_at=?, synced=0
                         WHERE ml_id=?
                         """,
@@ -731,6 +844,7 @@ class SQLiteFallback:
                             p.url,
                             c_id,
                             b_id,
+                            mp_id,
                             first_seen,
                             now,
                             p.ml_id,
@@ -746,10 +860,10 @@ class SQLiteFallback:
                             original_price, discount_percent,
                             rating_stars, rating_count,
                             free_shipping, installments_without_interest, thumbnail_url,
-                            product_url, category_id,
-                            badge_id, first_seen_at, last_seen_at
+                            product_url, category_id, badge_id, marketplace_id,
+                            first_seen_at, last_seen_at
                         ) VALUES (
-                            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                         )
                         """,
                         (
@@ -767,6 +881,7 @@ class SQLiteFallback:
                             p.url,
                             c_id,
                             b_id,
+                            mp_id,
                             now,
                             now,
                         ),

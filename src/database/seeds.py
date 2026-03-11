@@ -1,12 +1,18 @@
 """
 DealHunter — Dados de Seed (Fonte Única de Verdade)
 
-Define os badges e categorias canônicos que devem existir em TODOS os
-ambientes (Supabase e SQLite). Usados durante a inicialização dos bancos.
+Define os marketplaces, badges e categorias canônicos que devem existir
+em TODOS os ambientes (Supabase e SQLite). Usados durante a inicialização
+dos bancos.
 
-Para adicionar um novo badge ou categoria, basta editar as listas abaixo.
-O seeding é idempotente (ON CONFLICT DO NOTHING / INSERT OR IGNORE).
+Para adicionar um novo marketplace, badge ou categoria, basta editar as
+listas abaixo. O seeding é idempotente (ON CONFLICT DO NOTHING / INSERT OR IGNORE).
 """
+
+# Marketplaces suportados
+MARKETPLACES: list[str] = [
+    "Mercado Livre",
+]
 
 # Badges conhecidos do Mercado Livre
 BADGES: list[str] = [

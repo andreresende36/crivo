@@ -29,7 +29,7 @@ from src.scraper.base_scraper import ScrapedProduct
 from .supabase_client import SupabaseClient
 from .sqlite_fallback import SQLiteFallback
 from .exceptions import SQLiteError, SupabaseError
-from .seeds import BADGES, CATEGORIES
+from .seeds import BADGES, CATEGORIES, MARKETPLACES
 
 logger = structlog.get_logger(__name__)
 
@@ -57,9 +57,11 @@ class StorageManager:
         # Caches persistentes de lookup: {nome_canonico: uuid}
         self._badge_cache: dict[str, str] = {}
         self._category_cache: dict[str, str] = {}
+        self._marketplace_cache: dict[str, str] = {}
         # Lookup de normalização: {nome_lower: nome_canonico}
         self._badge_canonical: dict[str, str] = {b.lower(): b for b in BADGES}
         self._category_canonical: dict[str, str] = {c.lower(): c for c in CATEGORIES}
+        self._marketplace_canonical: dict[str, str] = {m.lower(): m for m in MARKETPLACES}
 
     # ------------------------------------------------------------------
     # Ciclo de vida
@@ -113,22 +115,25 @@ class StorageManager:
             await self._preload_caches()
 
     async def _seed_supabase(self) -> None:
-        """Insere badges e categories canônicos no Supabase (idempotente)."""
+        """Insere badges, categories e marketplaces canônicos no Supabase (idempotente)."""
         try:
             for name in BADGES:
                 await self._supabase.get_or_create_badge(name)
             for name in CATEGORIES:
                 await self._supabase.get_or_create_category(name)
+            for name in MARKETPLACES:
+                await self._supabase.get_or_create_marketplace(name)
             logger.debug(
                 "supabase_seeds_applied",
                 badges=len(BADGES),
                 categories=len(CATEGORIES),
+                marketplaces=len(MARKETPLACES),
             )
         except SupabaseError as exc:
             logger.warning("supabase_seed_failed", error=str(exc))
 
     async def _sync_lookup_uuids(self) -> None:
-        """Sincroniza UUIDs de badges/categories do SQLite com o Supabase.
+        """Sincroniza UUIDs de badges/categories/marketplaces do SQLite com o Supabase.
 
         Quando ambos os backends estão ativos, o cache usa UUIDs do Supabase.
         Se o SQLite tiver UUIDs diferentes (gerados localmente no seed),
@@ -138,23 +143,29 @@ class StorageManager:
         try:
             supa_badges = await self._supabase.get_all_badges()
             supa_categories = await self._supabase.get_all_categories()
-            await self._sqlite.sync_lookup_ids(supa_badges, supa_categories)
+            supa_marketplaces = await self._supabase.get_all_marketplaces()
+            await self._sqlite.sync_lookup_ids(
+                supa_badges, supa_categories, supa_marketplaces
+            )
         except Exception as exc:
             logger.warning("lookup_uuid_sync_failed", error=str(exc))
 
     async def _preload_caches(self) -> None:
-        """Carrega badges e categories em memória para evitar queries repetidas."""
+        """Carrega badges, categories e marketplaces em memória para evitar queries repetidas."""
         try:
             if self._using_supabase:
                 self._badge_cache = await self._supabase.get_all_badges()
                 self._category_cache = await self._supabase.get_all_categories()
+                self._marketplace_cache = await self._supabase.get_all_marketplaces()
             else:
                 self._badge_cache = await self._sqlite.get_all_badges()
                 self._category_cache = await self._sqlite.get_all_categories()
+                self._marketplace_cache = await self._sqlite.get_all_marketplaces()
             logger.debug(
                 "caches_preloaded",
                 badges=len(self._badge_cache),
                 categories=len(self._category_cache),
+                marketplaces=len(self._marketplace_cache),
             )
         except Exception as exc:
             logger.warning("cache_preload_failed", error=str(exc))
@@ -231,12 +242,13 @@ class StorageManager:
         # Resolve FKs de lookup (usa cache em memória)
         badge_id = await self.resolve_badge_id(product.badge)
         category_id = await self.resolve_category_id(product.category)
+        marketplace_id = await self.resolve_marketplace_id(product.marketplace)
 
         if self._using_supabase:
             try:
                 # Supabase primeiro: gera o UUID canônico
                 remote_id = await self._supabase.upsert_product(
-                    product, badge_id=badge_id, category_id=category_id
+                    product, badge_id=badge_id, category_id=category_id, marketplace_id=marketplace_id
                 )
                 # SQLite usa o mesmo UUID para manter FKs consistentes
                 await self._sqlite.upsert_product(
@@ -244,6 +256,7 @@ class StorageManager:
                     product_id=remote_id,
                     badge_id=badge_id,
                     category_id=category_id,
+                    marketplace_id=marketplace_id,
                 )
                 return remote_id
             except SupabaseError as exc:
@@ -255,7 +268,7 @@ class StorageManager:
 
         # Supabase indisponível: SQLite gera seu próprio UUID
         return await self._sqlite.upsert_product(
-            product, badge_id=badge_id, category_id=category_id
+            product, badge_id=badge_id, category_id=category_id, marketplace_id=marketplace_id
         )
 
     async def check_duplicate(self, ml_id: str) -> bool:
@@ -296,6 +309,14 @@ class StorageManager:
         Se não encontrar match nos seeds, retorna o nome stripped como está.
         """
         return self._category_canonical.get(name.strip().lower(), name.strip())
+
+    def _normalize_marketplace(self, name: str) -> str:
+        """Normaliza nome de marketplace para a forma canônica dos seeds.
+
+        Ex: 'mercado livre' → 'Mercado Livre'.
+        Se não encontrar match nos seeds, retorna o nome stripped como está.
+        """
+        return self._marketplace_canonical.get(name.strip().lower(), name.strip())
 
     # ------------------------------------------------------------------
     # badges
@@ -357,6 +378,27 @@ class StorageManager:
             self._category_cache[name] = cat_id
         return cat_id
 
+    async def resolve_marketplace_id(self, name: str) -> str | None:
+        """Resolve o nome de um marketplace para seu UUID, usando cache em memória."""
+        if not name:
+            return None
+        name = self._normalize_marketplace(name)
+        if name in self._marketplace_cache:
+            return self._marketplace_cache[name]
+        mp_id: str | None = None
+        if self._using_supabase:
+            try:
+                mp_id = await self._supabase.get_or_create_marketplace(name)
+            except SupabaseError as exc:
+                logger.warning("supabase_marketplace_resolve_failed", error=str(exc))
+        if mp_id is None:
+            mp_id = await self._sqlite.get_or_create_marketplace(name)
+        else:
+            await self._sqlite.ensure_marketplace_id(name, mp_id)
+        if mp_id:
+            self._marketplace_cache[name] = mp_id
+        return mp_id
+
     # ------------------------------------------------------------------
     # Batch operations (performance)
     # ------------------------------------------------------------------
@@ -398,12 +440,21 @@ class StorageManager:
                     cat_cache[p.category] = await self.resolve_category_id(p.category)
                 category_ids[p.ml_id] = cat_cache[p.category]
 
+        # Resolve marketplace IDs em batch (cache por nome)
+        mp_cache: dict[str, str | None] = {}
+        marketplace_ids: dict[str, str | None] = {}
+        for p in products:
+            if p.marketplace not in mp_cache:
+                mp_cache[p.marketplace] = await self.resolve_marketplace_id(p.marketplace)
+            marketplace_ids[p.ml_id] = mp_cache[p.marketplace]
+
         if self._using_supabase:
             try:
                 remote_ids = await self._supabase.upsert_products_batch(
                     products,
                     badge_ids=badge_ids,
                     category_ids=category_ids,
+                    marketplace_ids=marketplace_ids,
                 )
                 # Espelha no SQLite com os mesmos UUIDs
                 await self._sqlite.upsert_products_batch(
@@ -411,6 +462,7 @@ class StorageManager:
                     product_ids=remote_ids,
                     badge_ids=badge_ids,
                     category_ids=category_ids,
+                    marketplace_ids=marketplace_ids,
                 )
                 return remote_ids
             except SupabaseError as exc:
@@ -424,6 +476,7 @@ class StorageManager:
             products,
             badge_ids=badge_ids,
             category_ids=category_ids,
+            marketplace_ids=marketplace_ids,
         )
 
     async def add_price_history_batch(self, entries: list[dict]) -> bool:

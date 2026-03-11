@@ -167,6 +167,37 @@ class SupabaseClient:
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_all_categories") from exc
 
+    async def get_or_create_marketplace(self, name: str) -> Optional[str]:
+        """Retorna o ID do marketplace pelo nome. Cria se não existir."""
+        if not name:
+            return None
+        try:
+            result = (
+                await self._db.table("marketplaces")
+                .select("id")
+                .eq("name", name)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return result.data[0]["id"]
+            result = await self._db.table("marketplaces").insert({"name": name}).execute()
+            if result.data:
+                mp_id: str = result.data[0]["id"]
+                logger.debug("supabase_marketplace_created", name=name, marketplace_id=mp_id)
+                return mp_id
+            return None
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="get_or_create_marketplace") from exc
+
+    async def get_all_marketplaces(self) -> dict[str, str]:
+        """Retorna todos os marketplaces como {nome: uuid}."""
+        try:
+            result = await self._db.table("marketplaces").select("id, name").execute()
+            return {row["name"]: row["id"] for row in (result.data or [])}
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="get_all_marketplaces") from exc
+
     # ------------------------------------------------------------------
     # products
     # ------------------------------------------------------------------
@@ -176,6 +207,7 @@ class SupabaseClient:
         product: ScrapedProduct,
         badge_id: str | None = None,
         category_id: str | None = None,
+        marketplace_id: str | None = None,
     ) -> Optional[str]:
         """
         Insere ou atualiza um produto pelo ml_id.
@@ -186,7 +218,7 @@ class SupabaseClient:
 
         Retorna o UUID (id) do produto no banco, ou None em caso de erro.
         """
-        data = self._product_to_row(product, badge_id=badge_id, category_id=category_id)
+        data = self._product_to_row(product, badge_id=badge_id, category_id=category_id, marketplace_id=marketplace_id)
         try:
             result = (
                 await self._db.table("products")
@@ -254,6 +286,7 @@ class SupabaseClient:
         products: list["ScrapedProduct"],
         badge_ids: dict[str, str | None] | None = None,
         category_ids: dict[str, str | None] | None = None,
+        marketplace_ids: dict[str, str | None] | None = None,
     ) -> dict[str, str]:
         """
         Upsert de múltiplos produtos em UMA única chamada.
@@ -264,6 +297,7 @@ class SupabaseClient:
             return {}
         badges_map = badge_ids or {}
         cats_map = category_ids or {}
+        mps_map = marketplace_ids or {}
         # Deduplica por ml_id (Supabase rejeita ON CONFLICT com dupes na mesma batch)
         seen: dict[str, "ScrapedProduct"] = {}
         for p in products:
@@ -274,6 +308,7 @@ class SupabaseClient:
                 p,
                 badge_id=badges_map.get(p.ml_id),
                 category_id=cats_map.get(p.ml_id),
+                marketplace_id=mps_map.get(p.ml_id),
             )
             for p in unique_products
         ]
@@ -658,6 +693,7 @@ class SupabaseClient:
         product: ScrapedProduct,
         badge_id: str | None = None,
         category_id: str | None = None,
+        marketplace_id: str | None = None,
     ) -> dict:
         """
         Mapeia os campos do ScrapedProduct para as colunas da tabela products.
@@ -687,6 +723,7 @@ class SupabaseClient:
             "product_url": product.url,
             "category_id": category_id,
             "badge_id": badge_id,
+            "marketplace_id": marketplace_id,
             # Supabase retorna first_seen_at inalterado no update via trigger
             "first_seen_at": now,
             "last_seen_at": now,

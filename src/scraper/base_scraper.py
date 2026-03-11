@@ -110,6 +110,7 @@ class ScrapedProduct:
     # Controle interno
     scraped_at: float = field(default_factory=time.time)
     source: str = ""  # Ex: "ofertas_do_dia", "categoria_moda"
+    marketplace: str = "Mercado Livre"  # Marketplace de origem
 
     def __post_init__(self):
         if self.original_price and self.original_price > self.price:

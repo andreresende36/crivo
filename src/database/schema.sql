@@ -45,6 +45,19 @@ CREATE TABLE IF NOT EXISTS categories (
 -- Inseridos automaticamente na inicialização do sistema.
 
 -- =============================================================================
+-- 1c. marketplaces
+-- Tabela de lookup para os marketplaces suportados.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS marketplaces (
+    id          UUID    DEFAULT uuid_generate_v4() PRIMARY KEY,
+    name        TEXT    NOT NULL UNIQUE,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed de marketplaces é gerenciado por src/database/seeds.py (fonte única de verdade)
+-- Inseridos automaticamente na inicialização do sistema.
+
+-- =============================================================================
 -- 2. products
 -- Catálogo de todos os produtos encontrados pelo scraper.
 -- ml_id é o identificador único no Mercado Livre.
@@ -64,6 +77,7 @@ CREATE TABLE IF NOT EXISTS products (
     product_url         TEXT        NOT NULL DEFAULT '',
     category_id                 UUID        REFERENCES categories(id),
     badge_id                    UUID        REFERENCES badges(id),
+    marketplace_id              UUID        REFERENCES marketplaces(id),
     installments_without_interest BOOLEAN   DEFAULT FALSE,
     first_seen_at               TIMESTAMPTZ DEFAULT NOW(),
     last_seen_at        TIMESTAMPTZ DEFAULT NOW(),
@@ -88,6 +102,9 @@ CREATE INDEX IF NOT EXISTS idx_products_price
 
 CREATE INDEX IF NOT EXISTS idx_products_badge_id
     ON products(badge_id);
+
+CREATE INDEX IF NOT EXISTS idx_products_marketplace_id
+    ON products(marketplace_id);
 
 -- Trigger: preserva first_seen_at e atualiza last_seen_at automaticamente nos UPDATEs
 CREATE OR REPLACE FUNCTION fn_products_on_update()
@@ -212,8 +229,9 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_details_gin
 -- anon key tem acesso somente de leitura via policies explícitas.
 -- =============================================================================
 
-ALTER TABLE badges       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE badges        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE marketplaces  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scored_offers ENABLE ROW LEVEL SECURITY;
@@ -236,6 +254,14 @@ CREATE POLICY "categories_public_read"
 
 CREATE POLICY "categories_service_write"
     ON categories FOR ALL
+    USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "marketplaces_public_read"
+    ON marketplaces FOR SELECT USING (true);
+
+CREATE POLICY "marketplaces_service_write"
+    ON marketplaces FOR ALL
     USING (auth.role() = 'service_role')
     WITH CHECK (auth.role() = 'service_role');
 
