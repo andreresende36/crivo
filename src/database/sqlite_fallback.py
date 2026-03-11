@@ -919,6 +919,53 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="save_scored_offer") from exc
 
+    async def save_scored_offers_batch(self, entries: list[dict]) -> list[str]:
+        """
+        Insere múltiplas scored_offers em 1 transação (1 commit).
+
+        entries: lista de dicts com keys:
+            product_id, rule_score, final_score, status,
+            ai_score (opcional), ai_description (opcional).
+
+        Returns:
+            Lista de UUIDs gerados para cada entrada.
+        """
+        if not entries:
+            return []
+        now = datetime.now(tz=timezone.utc).isoformat()
+        ids: list[str] = []
+        try:
+            rows = []
+            for e in entries:
+                row_id = str(uuid.uuid4())
+                ids.append(row_id)
+                rows.append(
+                    (
+                        row_id,
+                        e["product_id"],
+                        e["rule_score"],
+                        e.get("ai_score"),
+                        e["final_score"],
+                        e.get("ai_description"),
+                        e["status"],
+                        now,
+                    )
+                )
+            await self._db.executemany(
+                """
+                INSERT OR IGNORE INTO scored_offers (
+                    id, product_id, rule_score, ai_score, final_score,
+                    ai_description, status, scored_at
+                ) VALUES (?,?,?,?,?,?,?,?)
+                """,
+                rows,
+            )
+            await self._db.commit()
+            logger.debug("sqlite_scored_offers_batch_saved", count=len(ids))
+            return ids
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="save_scored_offers_batch") from exc
+
     # ------------------------------------------------------------------
     # sent_offers
     # ------------------------------------------------------------------
@@ -1055,7 +1102,7 @@ class SQLiteFallback:
         stats = {
             "products": await self._sync_table(client, "products", "ml_id"),
             "price_history": await self._sync_table(client, "price_history", "id"),
-            "scored_offers": await self._sync_table(client, "scored_offers", "id"),
+            "scored_offers": await self._sync_table(client, "scored_offers", "product_id"),
             "sent_offers": await self._sync_table(client, "sent_offers", "id"),
             "system_logs": await self._sync_logs_table(client),
         }

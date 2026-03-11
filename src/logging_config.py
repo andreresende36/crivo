@@ -83,11 +83,10 @@ _LEVEL_STYLE = {
 _EVENT_CONFIG = {
     # ── Pipeline ──────────────────────────────────────────────────────
     "pipeline_start": ("🚀", _C.B_CYAN, "PIPELINE INICIADO"),
-    "pipeline_done": ("✅", _C.B_GREEN, "PIPELINE CONCLUÍDO"),
-    "execution_complete": ("🏁", _C.B_GREEN, "EXECUÇÃO FINALIZADA"),
+    "pipeline_summary": ("__CUSTOM__", None, None),  # rendered separately
     # ── Scraper ───────────────────────────────────────────────────────
     "scraping_source": ("🌐", _C.B_BLUE, "INICIANDO SCRAPING"),
-    "scraping_page": ("📄", _C.BLUE, None),  # None = formato custom inline
+    "scraping_page": ("📄", _C.BLUE, None),
     "page_parsed": ("📦", _C.GREEN, None),
     "source_done": ("✔️ ", _C.B_GREEN, "FONTE CONCLUÍDA"),
     "scraping_done": ("📊", _C.B_CYAN, "SCRAPING FINALIZADO"),
@@ -96,8 +95,8 @@ _EVENT_CONFIG = {
     # ── Dedup & Filtros ───────────────────────────────────────────────
     "dedup_done": ("🔎", _C.CYAN, None),
     "fake_filter_done": ("🛡️ ", _C.CYAN, None),
-    "scraper_done": ("📋", _C.B_GREEN, "COLETA FINALIZADA"),
     "batch_fake_check": ("🛡️ ", _C.CYAN, None),
+    "batch_evaluated": ("🎯", _C.B_CYAN, "SCORING FINALIZADO"),
     # ── Banco de Dados ────────────────────────────────────────────────
     "save_failed": ("💾", _C.RED, None),
     "storage_error": ("💾", _C.YELLOW, None),
@@ -113,6 +112,37 @@ _EVENT_CONFIG = {
     "delay": ("⏳", _C.DIM, None),
     "rotating_context": ("🔄", _C.DIM, None),
     "unhealthy_services": ("⚠️ ", _C.B_YELLOW, "SERVIÇOS COM PROBLEMA"),
+}
+
+# Eventos internos de DB silenciados no console (só aparecem em JSON/debug)
+_SILENT_EVENTS = {
+    "sqlite_products_batch_upserted",
+    "sqlite_price_history_batch_added",
+    "sqlite_scored_offers_batch_saved",
+    "sqlite_product_inserted_from_dict",
+    "sqlite_badge_created",
+    "sqlite_category_created",
+    "sqlite_scored_offer_saved",
+    "sqlite_initialized",
+    "sqlite_closed",
+    "sqlite_sync_start",
+    "sqlite_sync_done",
+    "supabase_badge_created",
+    "supabase_category_created",
+    "supabase_connected",
+    "supabase_closed",
+    "supabase_ping_ok",
+    "product_upserted",
+    "price_history_batch_added",
+    "price_history_added",
+    "scored_offers_batch_saved",
+    "scored_offer_saved",
+    "event_logged",
+    "sync_pending_nothing_to_sync",
+    "auto_sync_start",
+    "auto_sync_done",
+    "product_scored",
+    "fake_discount_check",
 }
 
 
@@ -172,6 +202,101 @@ def _render_inline(emoji: str, color: str, event: str, kv: dict) -> str:
     return "  ".join(parts)
 
 
+def _render_pipeline_summary(ts: str, kv: dict) -> str:
+    """
+    Renderiza o banner final do pipeline com métricas enriquecidas:
+    contadores, timings por etapa, stats de score e preço.
+    """
+    sep = f"{_C.B_GREEN}{'═' * 60}{_C.RESET}"
+    thin = f"{_C.DIM}{'─' * 60}{_C.RESET}"
+
+    lines = ["", sep, f"🏁  {_C.B_GREEN}PIPELINE FINALIZADO{_C.RESET}", thin]
+
+    # ── Contadores principais
+    labels = [
+        ("Scraped", "scraped"),
+        ("Novos", "new"),
+        ("Scored", "scored"),
+        ("Aprovados", "approved"),
+        ("Rejeitados", "rejected"),
+        ("Salvos", "saved"),
+        ("Erros", "errors"),
+    ]
+    for label, key in labels:
+        val = kv.get(key, 0)
+        if key == "errors":
+            color = _C.B_RED if val and int(val) > 0 else _C.DIM
+        elif key == "approved":
+            color = _C.B_GREEN
+        elif key == "rejected":
+            color = _C.YELLOW if val and int(val) > 0 else _C.DIM
+        else:
+            color = _C.B_WHITE
+        lines.append(f"   {_C.DIM}▸{_C.RESET} {label}: {color}{val}{_C.RESET}")
+
+    # ── Score stats
+    score_stats = kv.get("score_stats", {})
+    if score_stats:
+        lines.append(thin)
+        avg = score_stats.get("score_avg", 0)
+        mn = score_stats.get("score_min", 0)
+        mx = score_stats.get("score_max", 0)
+        lines.append(
+            f"   {_C.DIM}▸{_C.RESET} Score: "
+            f"{_C.B_WHITE}avg={avg}{_C.RESET}  "
+            f"{_C.DIM}min={mn}  max={mx}{_C.RESET}"
+        )
+
+    # ── Price stats
+    price_stats = kv.get("price_stats", {})
+    if price_stats:
+        p_min = price_stats.get("price_min", 0)
+        p_max = price_stats.get("price_max", 0)
+        d_avg = price_stats.get("discount_avg")
+        price_line = (
+            f"   {_C.DIM}▸{_C.RESET} Preço: "
+            f"{_C.B_WHITE}R$ {p_min:.0f}{_C.RESET} – "
+            f"{_C.B_WHITE}R$ {p_max:.0f}{_C.RESET}"
+        )
+        if d_avg is not None:
+            price_line += (
+                f"  {_C.DIM}(desc. médio "
+                f"{_C.RESET}{_C.B_GREEN}{d_avg}%"
+                f"{_C.RESET}{_C.DIM}){_C.RESET}"
+            )
+        lines.append(price_line)
+
+    # ── Timings por etapa
+    timings = kv.get("timings", {})
+    if timings:
+        lines.append(thin)
+        timing_labels = [
+            ("Scraping", "scraping"),
+            ("Dedup", "dedup"),
+            ("Fake Filter", "fake_filter"),
+            ("Scoring", "scoring"),
+            ("Salvamento", "saving"),
+        ]
+        parts = []
+        for label, key in timing_labels:
+            val = timings.get(key)
+            if val is not None:
+                parts.append(f"{label} {_C.B_WHITE}{val}s{_C.RESET}")
+        lines.append(
+            f"   {_C.DIM}▸ Tempos:{_C.RESET} {f'{_C.DIM} │ {_C.RESET}'.join(parts)}"
+        )
+
+    # ── Elapsed total
+    elapsed = kv.get("elapsed_seconds")
+    if elapsed is not None:
+        lines.append(
+            f"   {_C.DIM}▸{_C.RESET} Total: " f"{_C.B_GREEN}{elapsed}s{_C.RESET}"
+        )
+
+    lines.append(sep)
+    return f"{ts}  " + "\n".join(lines)
+
+
 def _dealhunter_renderer(logger, method_name, event_dict):
     """
     Renderer customizado do DealHunter para o console.
@@ -189,6 +314,8 @@ def _dealhunter_renderer(logger, method_name, event_dict):
     except (ValueError, TypeError):
         ts = f"{_C.DIM}{timestamp}{_C.RESET}"
 
+    # (Eventos silentão) são filtrados por processor separado
+
     # Nível de log
     level_color, level_emoji = _LEVEL_STYLE.get(level, (_C.RESET, ""))
 
@@ -198,6 +325,11 @@ def _dealhunter_renderer(logger, method_name, event_dict):
     if config:
         emoji, color, title = config
         kv = {k: v for k, v in event_dict.items() if k != "logger"}
+
+        # Custom renderer para pipeline_summary
+        if event == "pipeline_summary":
+            return _render_pipeline_summary(ts, kv)
+
         if title:
             # Banner destacado
             formatted = _render_banner(emoji, color, title, kv)
@@ -218,26 +350,46 @@ def _dealhunter_renderer(logger, method_name, event_dict):
     return f"{ts}  {level_emoji}  {level_color}{event}{_C.RESET}{kv_str}"
 
 
+def _filter_silent_events(logger, method_name, event_dict):
+    """Processor que descarta eventos internos de DB no console."""
+    event = event_dict.get("event", "")
+    if event in _SILENT_EVENTS:
+        raise structlog.DropEvent
+    return event_dict
+
+
 def setup_logging() -> None:
     """Configura logging estruturado com formatação visual rica."""
     is_tty = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
     if is_tty:
-        # Terminal interativo → sempre usa o renderer visual rico
+        # Terminal interativo → renderer visual rico + filtro de DB noise
         renderer = _dealhunter_renderer
-    elif not settings.is_production:
-        renderer = structlog.dev.ConsoleRenderer()
-    else:
-        # Ambiente não-interativo (Docker, pipes, CI) → JSON
-        renderer = structlog.processors.JSONRenderer()
-
-    structlog.configure(
-        processors=[
+        processors = [
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.add_log_level,
             _redact_sensitive_data,
+            _filter_silent_events,
             renderer,
-        ],
+        ]
+    elif not settings.is_production:
+        processors = [
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.add_log_level,
+            _redact_sensitive_data,
+            structlog.dev.ConsoleRenderer(),
+        ]
+    else:
+        # Ambiente não-interativo (Docker, pipes, CI) → JSON (todos os eventos)
+        processors = [
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.add_log_level,
+            _redact_sensitive_data,
+            structlog.processors.JSONRenderer(),
+        ]
+
+    structlog.configure(
+        processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(
             logging.getLevelName(settings.log_level)
         ),

@@ -128,21 +128,51 @@ class ScoreEngine:
 
     # Marcas conhecidas populares no ML BR (lowercase)
     _KNOWN_BRANDS: set[str] = {
-        "nike", "adidas", "puma", "reebok", "new balance", "asics",
-        "samsung", "apple", "xiaomi", "motorola", "lg", "sony",
-        "philips", "electrolux", "brastemp", "consul", "arno",
-        "mondial", "tramontina", "havaianas", "reserva", "hering",
-        "levis", "colcci", "dumond", "arezzo", "lupo", "olympikus",
-        "mizuno", "fila", "vans", "converse", "lacoste", "calvin klein",
-        "tommy hilfiger", "polo ralph lauren", "under armour",
+        "nike",
+        "adidas",
+        "puma",
+        "reebok",
+        "new balance",
+        "asics",
+        "samsung",
+        "apple",
+        "xiaomi",
+        "motorola",
+        "lg",
+        "sony",
+        "philips",
+        "electrolux",
+        "brastemp",
+        "consul",
+        "arno",
+        "mondial",
+        "tramontina",
+        "havaianas",
+        "reserva",
+        "hering",
+        "levis",
+        "colcci",
+        "dumond",
+        "arezzo",
+        "lupo",
+        "olympikus",
+        "mizuno",
+        "fila",
+        "vans",
+        "converse",
+        "lacoste",
+        "calvin klein",
+        "tommy hilfiger",
+        "polo ralph lauren",
+        "under armour",
     }
 
     # Proporcao do peso maximo de badge por tipo (chaves normalizadas)
     _BADGE_RATIO: dict[str, float] = {
-        "oferta relampago": 1.00,   # 100% do peso
+        "oferta relampago": 1.00,  # 100% do peso
         "oferta imperdivel": 0.50,  # 50% do peso
-        "oferta do dia": 0.30,      # 30% do peso
-        "mais vendido": 0.10,       # 10% do peso
+        "oferta do dia": 0.30,  # 30% do peso
+        "mais vendido": 0.10,  # 10% do peso
     }
 
     def __init__(self) -> None:
@@ -199,9 +229,7 @@ class ScoreEngine:
         passed = score >= self.cfg.min_score
 
         if not passed:
-            reject_reason = (
-                f"Score {score} abaixo do minimo {self.cfg.min_score}"
-            )
+            reject_reason = f"Score {score} abaixo do minimo {self.cfg.min_score}"
 
         logger.debug(
             "product_scored",
@@ -225,9 +253,7 @@ class ScoreEngine:
             redistribution_factor=round(factor, 3),
         )
 
-    def evaluate_batch(
-        self, products: list[ScrapedProduct]
-    ) -> list[ScoredProduct]:
+    def evaluate_batch(self, products: list[ScrapedProduct]) -> list[ScoredProduct]:
         """Avalia uma lista de produtos e retorna apenas os aprovados, ordenados por score."""
         scored = [self.evaluate(p) for p in products]
         approved = [s for s in scored if s.passed]
@@ -251,7 +277,8 @@ class ScoreEngine:
 
         # 1. Desconto (sigmoid)
         has_discount = product.discount_pct > 0 or (
-            product.original_price is not None and product.original_price > product.price
+            product.original_price is not None
+            and product.original_price > product.price
         )
         breakdown.discount = CriterionScore(
             raw_score=self._score_discount(product.discount_pct),
@@ -285,9 +312,7 @@ class ScoreEngine:
 
         # 5. Frete gratis (binario — sempre disponivel)
         breakdown.free_shipping = CriterionScore(
-            raw_score=(
-                self.cfg.weight_free_shipping if product.free_shipping else 0.0
-            ),
+            raw_score=(self.cfg.weight_free_shipping if product.free_shipping else 0.0),
             max_points=self.cfg.weight_free_shipping,
             available=True,
         )
@@ -316,9 +341,7 @@ class ScoreEngine:
     # Redistribuicao dinamica
     # ------------------------------------------------------------------
 
-    def _redistribute(
-        self, breakdown: ScoreBreakdown
-    ) -> tuple[float, int, float]:
+    def _redistribute(self, breakdown: ScoreBreakdown) -> tuple[float, int, float]:
         """
         Redistribui pesos dos criterios indisponiveis para os disponiveis.
 
@@ -442,9 +465,7 @@ class ScoreEngine:
         # Penaliza se >50% das letras sao maiusculas
         alpha_chars = [c for c in title if c.isalpha()]
         if alpha_chars:
-            upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(
-                alpha_chars
-            )
+            upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars)
             if upper_ratio < 0.5:
                 internal_score += 2.0
 
@@ -459,9 +480,7 @@ class ScoreEngine:
             r"aproveite",
             r"\bfake\b",
         ]
-        has_spam = any(
-            re.search(p, title, re.IGNORECASE) for p in spam_patterns
-        )
+        has_spam = any(re.search(p, title, re.IGNORECASE) for p in spam_patterns)
         if not has_spam:
             internal_score += 2.0
 
@@ -471,9 +490,7 @@ class ScoreEngine:
             r"\b(original|oficial|importado|novo)\b",
             r"\b(kit|conjunto|par|pacote|cx)\b",
         ]
-        has_specs = any(
-            re.search(p, title, re.IGNORECASE) for p in spec_patterns
-        )
+        has_specs = any(re.search(p, title, re.IGNORECASE) for p in spec_patterns)
         if has_specs:
             internal_score += 1.0
 
@@ -497,14 +514,10 @@ class ScoreEngine:
 
         if product.rating > 0 and product.rating < self.cfg.min_rating:
             return (
-                f"Avaliacao {product.rating} abaixo do "
-                f"minimo {self.cfg.min_rating}"
+                f"Avaliacao {product.rating} abaixo do " f"minimo {self.cfg.min_rating}"
             )
 
-        if (
-            product.review_count > 0
-            and product.review_count < self.cfg.min_reviews
-        ):
+        if product.review_count > 0 and product.review_count < self.cfg.min_reviews:
             return (
                 f"Apenas {product.review_count} avaliacoes "
                 f"(minimo {self.cfg.min_reviews})"

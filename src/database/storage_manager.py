@@ -545,6 +545,42 @@ class StorageManager:
 
         return local_id or ""
 
+    async def save_scored_offers_batch(self, entries: list[dict]) -> list[str]:
+        """
+        Salva múltiplas scored_offers em ambos os bancos (1 transação cada).
+
+        entries: lista de dicts com keys:
+            product_id, rule_score, final_score, status,
+            ai_score (opcional), ai_description (opcional).
+
+        Returns:
+            Lista de UUIDs dos scored_offers criados.
+        """
+        if not entries:
+            return []
+
+        local_ids: list[str] = []
+        try:
+            local_ids = await self._sqlite.save_scored_offers_batch(entries)
+        except SQLiteError as exc:
+            if "FOREIGN KEY" in str(exc):
+                logger.warning(
+                    "sqlite_fk_skip_batch",
+                    table="scored_offers",
+                    count=len(entries),
+                )
+            else:
+                raise
+
+        if self._using_supabase:
+            try:
+                remote_ids = await self._supabase.save_scored_offers_batch(entries)
+                return remote_ids
+            except SupabaseError as exc:
+                logger.warning("supabase_scored_offers_batch_failed", error=str(exc))
+
+        return local_ids
+
     # ------------------------------------------------------------------
     # sent_offers
     # ------------------------------------------------------------------

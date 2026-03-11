@@ -62,9 +62,10 @@ CREATE TABLE IF NOT EXISTS products (
     free_shipping       BOOLEAN     DEFAULT FALSE,
     thumbnail_url       TEXT        DEFAULT '',
     product_url         TEXT        NOT NULL DEFAULT '',
-    category_id         UUID        REFERENCES categories(id),
-    badge_id            UUID        REFERENCES badges(id),
-    first_seen_at       TIMESTAMPTZ DEFAULT NOW(),
+    category_id                 UUID        REFERENCES categories(id),
+    badge_id                    UUID        REFERENCES badges(id),
+    installments_without_interest BOOLEAN   DEFAULT FALSE,
+    first_seen_at               TIMESTAMPTZ DEFAULT NOW(),
     last_seen_at        TIMESTAMPTZ DEFAULT NOW(),
     created_at          TIMESTAMPTZ DEFAULT NOW()
 );
@@ -140,7 +141,8 @@ CREATE TABLE IF NOT EXISTS scored_offers (
     ai_description  TEXT,                                             -- Texto gerado pelo Claude
     status          TEXT        NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending', 'approved', 'rejected')),
-    scored_at       TIMESTAMPTZ DEFAULT NOW()
+    scored_at       TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT scored_offers_product_id_unique UNIQUE (product_id)
 );
 
 -- Índices de scored_offers

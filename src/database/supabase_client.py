@@ -441,6 +441,47 @@ class SupabaseClient:
         except Exception as exc:
             raise SupabaseError(str(exc), operation="save_scored_offer") from exc
 
+    async def save_scored_offers_batch(self, entries: list[dict]) -> list[str]:
+        """
+        Insere múltiplas scored_offers em UMA única chamada.
+
+        entries: lista de dicts com keys:
+            product_id, rule_score, final_score, status,
+            ai_score (opcional), ai_description (opcional).
+
+        Returns:
+            Lista de UUIDs gerados pelo banco.
+        """
+        if not entries:
+            return []
+        now = datetime.now(tz=timezone.utc).isoformat()
+        rows = [
+            {
+                "product_id": e["product_id"],
+                "rule_score": e["rule_score"],
+                "ai_score": e.get("ai_score"),
+                "final_score": e["final_score"],
+                "ai_description": e.get("ai_description"),
+                "status": e["status"],
+                "scored_at": now,
+            }
+            for e in entries
+        ]
+        try:
+            result = await self._db.table("scored_offers").upsert(rows, on_conflict="product_id").execute()
+            if not result.data:
+                raise SupabaseError(
+                    "batch insert retornou sem dados",
+                    operation="save_scored_offers_batch",
+                )
+            ids = [row["id"] for row in result.data]
+            logger.debug("scored_offers_batch_saved", count=len(ids))
+            return ids
+        except SupabaseError:
+            raise
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="save_scored_offers_batch") from exc
+
     async def get_pending_scored_offers(self, limit: int = 50) -> list[dict]:
         """
         Retorna ofertas aprovadas ainda não enviadas.
