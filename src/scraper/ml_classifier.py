@@ -222,6 +222,7 @@ KEYWORDS_MAP = {
         "trena",
         "macaco hidráulico",
         "jogo de soquetes",
+        "chave de impacto",
     ],
     "Construção": [
         "tinta",
