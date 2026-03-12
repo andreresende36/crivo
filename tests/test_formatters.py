@@ -119,7 +119,6 @@ class TestMessageFormatter:
 class TestAffiliateLinkBuilder:
     def setup_method(self):
         with patch("src.distributor.affiliate_links.settings") as mock_cfg:
-            mock_cfg.mercado_livre.affiliate_id = "test_affiliate"
             mock_cfg.mercado_livre.affiliate_tag = "sempreblack"
             self.builder = AffiliateLinkBuilder.__new__(AffiliateLinkBuilder)
             self.builder.cfg = mock_cfg.mercado_livre

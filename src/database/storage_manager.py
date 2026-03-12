@@ -26,6 +26,7 @@ import structlog
 
 from src.config import settings
 from src.scraper.base_scraper import ScrapedProduct
+from src.utils.password import hash_password
 from .supabase_client import SupabaseClient
 from .sqlite_fallback import SQLiteFallback
 from .exceptions import SQLiteError, SupabaseError
@@ -706,6 +707,116 @@ class StorageManager:
             except SupabaseError:
                 pass
         return await self._sqlite.was_recently_sent(ml_id, hours)
+
+    # ------------------------------------------------------------------
+    # users
+    # ------------------------------------------------------------------
+
+    async def get_or_create_user(
+        self,
+        name: str,
+        affiliate_tag: str,
+        email: str | None = None,
+        password: str | None = None,
+        ml_cookies: dict | None = None,
+    ) -> str:
+        """Retorna o UUID do user pela tag. Cria se nao existir.
+
+        Se password for fornecida (plaintext), o hash bcrypt é calculado aqui
+        antes de persistir em qualquer banco.
+        """
+        password_hash = hash_password(password) if password else None
+
+        if self._using_supabase:
+            try:
+                remote_id = await self._supabase.get_or_create_user(
+                    name, affiliate_tag, email, password_hash, ml_cookies
+                )
+                if remote_id:
+                    await self._sqlite.get_or_create_user(
+                        name, affiliate_tag, email, password_hash, ml_cookies,
+                        user_id=remote_id,
+                    )
+                    return remote_id
+            except SupabaseError as exc:
+                logger.warning("supabase_user_failed", error=str(exc))
+        return await self._sqlite.get_or_create_user(
+            name, affiliate_tag, email, password_hash, ml_cookies
+        ) or ""
+
+    async def get_user_by_tag(self, affiliate_tag: str) -> dict | None:
+        """Retorna o user completo pela tag."""
+        if self._using_supabase:
+            try:
+                return await self._supabase.get_user_by_tag(affiliate_tag)
+            except SupabaseError:
+                pass
+        return await self._sqlite.get_user_by_tag(affiliate_tag)
+
+    # ------------------------------------------------------------------
+    # affiliate_links
+    # ------------------------------------------------------------------
+
+    async def get_affiliate_link(
+        self, product_id: str, user_id: str
+    ) -> dict | None:
+        """Retorna o affiliate link cacheado, ou None se nao existir."""
+        if self._using_supabase:
+            try:
+                return await self._supabase.get_affiliate_link(product_id, user_id)
+            except SupabaseError:
+                pass
+        return await self._sqlite.get_affiliate_link(product_id, user_id)
+
+    async def save_affiliate_link(
+        self,
+        product_id: str,
+        user_id: str,
+        short_url: str,
+        long_url: str = "",
+        ml_link_id: str = "",
+    ) -> str:
+        """Salva um affiliate link em ambos os bancos."""
+        local_id = await self._sqlite.save_affiliate_link(
+            product_id, user_id, short_url, long_url, ml_link_id
+        )
+        if self._using_supabase:
+            try:
+                remote_id = await self._supabase.save_affiliate_link(
+                    product_id, user_id, short_url, long_url, ml_link_id
+                )
+                return remote_id or local_id or ""
+            except SupabaseError as exc:
+                logger.warning("supabase_save_affiliate_link_failed", error=str(exc))
+        return local_id or ""
+
+    async def get_missing_affiliate_links(
+        self, user_id: str, product_ids: list[str]
+    ) -> list[str]:
+        """Retorna product_ids que ainda nao tem link de afiliado."""
+        if self._using_supabase:
+            try:
+                return await self._supabase.get_missing_affiliate_links(
+                    user_id, product_ids
+                )
+            except SupabaseError:
+                pass
+        return await self._sqlite.get_missing_affiliate_links(user_id, product_ids)
+
+    async def save_affiliate_links_batch(self, links: list[dict]) -> list[str]:
+        """Salva multiplos affiliate links em ambos os bancos."""
+        if not links:
+            return []
+        local_ids = await self._sqlite.save_affiliate_links_batch(links)
+        if self._using_supabase:
+            try:
+                remote_ids = await self._supabase.save_affiliate_links_batch(links)
+                return remote_ids or local_ids
+            except SupabaseError as exc:
+                logger.warning(
+                    "supabase_save_affiliate_links_batch_failed", error=str(exc)
+                )
+        return local_ids
 
     # ------------------------------------------------------------------
     # system_logs

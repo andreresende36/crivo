@@ -16,6 +16,7 @@ from src.scraper.ml_scraper import MLScraper
 from src.analyzer.fake_discount_detector import FakeDiscountDetector
 from src.analyzer.score_engine import ScoreEngine
 from src.database.storage_manager import StorageManager
+from src.distributor.affiliate_links import AffiliateLinkBuilder
 from src.monitoring.alert_bot import AlertBot
 from src.monitoring.health_check import HealthCheck
 
@@ -39,6 +40,7 @@ async def run_pipeline() -> dict:
         "approved": 0,
         "rejected": 0,
         "saved": 0,
+        "affiliate_links": 0,
         "errors": 0,
     }
     timings: dict[str, float] = {}
@@ -143,6 +145,29 @@ async def run_pipeline() -> dict:
                             "scored_offers_batch_save_failed",
                             error=str(exc_so),
                         )
+
+                # 6. AFFILIATE LINKS — Gera links oficiais via API do ML
+                t1 = time.time()
+                try:
+                    ml_cfg = settings.mercado_livre
+                    user_id = await storage.get_or_create_user(
+                        name=ml_cfg.user_name or ml_cfg.affiliate_tag,
+                        affiliate_tag=ml_cfg.affiliate_tag,
+                        email=ml_cfg.user_email or None,
+                        password=ml_cfg.user_password or None,
+                    )
+                    if user_id:
+                        aff_builder = AffiliateLinkBuilder(storage, user_id=user_id)
+                        products_map = {
+                            ids[p.ml_id]: p.url
+                            for p in approved_products
+                            if p.ml_id in ids
+                        }
+                        aff_results = await aff_builder.get_or_create_batch(products_map)
+                        stats["affiliate_links"] = len(aff_results)
+                except Exception as exc_aff:
+                    logger.warning("affiliate_links_failed", error=str(exc_aff))
+                timings["affiliate_links"] = round(time.time() - t1, 2)
 
             except Exception as exc:
                 logger.error("batch_save_failed", error=str(exc))

@@ -218,6 +218,35 @@ class SQLiteFallback:
             ON system_logs(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_sl_synced ON system_logs(synced);
 
+        CREATE TABLE IF NOT EXISTS users (
+            id              TEXT PRIMARY KEY,
+            name            TEXT NOT NULL,
+            affiliate_tag   TEXT NOT NULL,
+            email           TEXT,
+            password_hash   TEXT,
+            ml_cookies      TEXT,
+            created_at      TEXT DEFAULT (datetime('now')),
+            synced          INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_u_tag ON users(affiliate_tag);
+
+        CREATE TABLE IF NOT EXISTS affiliate_links (
+            id              TEXT PRIMARY KEY,
+            product_id      TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            short_url       TEXT NOT NULL,
+            long_url        TEXT,
+            ml_link_id      TEXT,
+            created_at      TEXT DEFAULT (datetime('now')),
+            synced          INTEGER DEFAULT 0,
+            UNIQUE (product_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_al_product ON affiliate_links(product_id);
+        CREATE INDEX IF NOT EXISTS idx_al_user ON affiliate_links(user_id);
+        CREATE INDEX IF NOT EXISTS idx_al_synced ON affiliate_links(synced);
+
         -- Views (SQLite usa datetime() em vez de NOW() - INTERVAL)
         CREATE VIEW IF NOT EXISTS vw_approved_unsent AS
         SELECT
@@ -299,6 +328,26 @@ class SQLiteFallback:
         try:
             await self._db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_p_marketplace_id ON products(marketplace_id)"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
+
+        # Migrações incrementais para a tabela users
+        for col, definition in [
+            ("email", "TEXT"),
+            ("password_hash", "TEXT"),
+        ]:
+            try:
+                await self._db.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
+                await self._db.commit()
+            except Exception:
+                pass  # Coluna já existe
+
+        # Índice único em users.email (criado após migration que adiciona a coluna)
+        try:
+            await self._db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_u_email ON users(email) WHERE email IS NOT NULL"
             )
             await self._db.commit()
         except Exception:
@@ -1519,6 +1568,168 @@ class SQLiteFallback:
             logger.error("sync_system_logs_error", error=str(exc))
             fail_ids.append("outer_error")
         return {"synced": len(ok_ids), "errors": len(fail_ids)}
+
+    # ------------------------------------------------------------------
+    # users
+    # ------------------------------------------------------------------
+
+    async def get_or_create_user(
+        self,
+        name: str,
+        affiliate_tag: str,
+        email: str | None = None,
+        password_hash: str | None = None,
+        ml_cookies: dict | None = None,
+        user_id: str | None = None,
+    ) -> Optional[str]:
+        """Retorna o ID do user pela tag. Cria se nao existir."""
+        try:
+            cursor = await self._db.execute(
+                "SELECT id FROM users WHERE affiliate_tag = ?",
+                (affiliate_tag,),
+            )
+            row = await cursor.fetchone()
+            if row:
+                return row[0]
+            uid = user_id or str(uuid.uuid4())
+            cookies_json = json.dumps(ml_cookies) if ml_cookies else None
+            await self._db.execute(
+                "INSERT INTO users (id, name, affiliate_tag, email, password_hash, ml_cookies) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (uid, name, affiliate_tag, email, password_hash, cookies_json),
+            )
+            await self._db.commit()
+            return uid
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_or_create_user") from exc
+
+    async def get_user_by_tag(self, affiliate_tag: str) -> Optional[dict]:
+        """Retorna o user completo pela tag."""
+        try:
+            cursor = await self._db.execute(
+                "SELECT id, name, affiliate_tag, ml_cookies, created_at FROM users WHERE affiliate_tag = ?",
+                (affiliate_tag,),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row[0],
+                "name": row[1],
+                "affiliate_tag": row[2],
+                "ml_cookies": json.loads(row[3]) if row[3] else None,
+                "created_at": row[4],
+            }
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_user_by_tag") from exc
+
+    # ------------------------------------------------------------------
+    # affiliate_links
+    # ------------------------------------------------------------------
+
+    async def get_affiliate_link(
+        self, product_id: str, user_id: str
+    ) -> Optional[dict]:
+        """Retorna o affiliate link para um produto+user, ou None."""
+        try:
+            cursor = await self._db.execute(
+                "SELECT id, product_id, user_id, short_url, long_url, ml_link_id, created_at "
+                "FROM affiliate_links WHERE product_id = ? AND user_id = ?",
+                (product_id, user_id),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row[0],
+                "product_id": row[1],
+                "user_id": row[2],
+                "short_url": row[3],
+                "long_url": row[4],
+                "ml_link_id": row[5],
+                "created_at": row[6],
+            }
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_affiliate_link") from exc
+
+    async def save_affiliate_link(
+        self,
+        product_id: str,
+        user_id: str,
+        short_url: str,
+        long_url: str = "",
+        ml_link_id: str = "",
+    ) -> Optional[str]:
+        """Salva um affiliate link (upsert por product_id+user_id)."""
+        try:
+            link_id = str(uuid.uuid4())
+            await self._db.execute(
+                """INSERT INTO affiliate_links
+                    (id, product_id, user_id, short_url, long_url, ml_link_id)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (product_id, user_id) DO UPDATE SET
+                    short_url = excluded.short_url,
+                    long_url = excluded.long_url,
+                    ml_link_id = excluded.ml_link_id""",
+                (link_id, product_id, user_id, short_url, long_url, ml_link_id),
+            )
+            await self._db.commit()
+            return link_id
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="save_affiliate_link") from exc
+
+    async def get_missing_affiliate_links(
+        self, user_id: str, product_ids: list[str]
+    ) -> list[str]:
+        """Retorna product_ids que ainda nao tem affiliate link para este user."""
+        if not product_ids:
+            return []
+        try:
+            placeholders = ",".join("?" for _ in product_ids)
+            cursor = await self._db.execute(
+                f"SELECT product_id FROM affiliate_links WHERE user_id = ? AND product_id IN ({placeholders})",  # noqa: S608
+                [user_id, *product_ids],
+            )
+            rows = await cursor.fetchall()
+            existing = {row[0] for row in rows}
+            return [pid for pid in product_ids if pid not in existing]
+        except Exception as exc:
+            raise SQLiteError(
+                str(exc), operation="get_missing_affiliate_links"
+            ) from exc
+
+    async def save_affiliate_links_batch(self, links: list[dict]) -> list[str]:
+        """Salva multiplos affiliate links."""
+        if not links:
+            return []
+        ids: list[str] = []
+        try:
+            for link in links:
+                link_id = str(uuid.uuid4())
+                await self._db.execute(
+                    """INSERT INTO affiliate_links
+                        (id, product_id, user_id, short_url, long_url, ml_link_id)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT (product_id, user_id) DO UPDATE SET
+                        short_url = excluded.short_url,
+                        long_url = excluded.long_url,
+                        ml_link_id = excluded.ml_link_id""",
+                    (
+                        link_id,
+                        link["product_id"],
+                        link["user_id"],
+                        link["short_url"],
+                        link.get("long_url", ""),
+                        link.get("ml_link_id", ""),
+                    ),
+                )
+                ids.append(link_id)
+            await self._db.commit()
+            return ids
+        except Exception as exc:
+            raise SQLiteError(
+                str(exc), operation="save_affiliate_links_batch"
+            ) from exc
 
     # ------------------------------------------------------------------
     # Métricas locais

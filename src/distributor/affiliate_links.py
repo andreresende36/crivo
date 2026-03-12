@@ -1,99 +1,161 @@
 """
 DealHunter — Affiliate Link Builder
-Constrói links de afiliado do Mercado Livre.
+Gera links de afiliado oficiais do Mercado Livre via API createLink.
 
-Documentação ML Affiliates: https://www.mercadolivre.com.br/afiliados
-Os parâmetros de rastreamento são adicionados à URL do produto.
+Fluxo:
+  1. Verifica se o link ja existe no banco (cache)
+  2. Se nao, chama a API createLink do ML
+  3. Salva o link gerado no banco para reuso
+
+Os links gerados (meli.la/xxx) sao permanentes e garantem atribuicao de comissao.
 """
 
+from __future__ import annotations
+
 import re
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import structlog
 
 from src.config import settings
+from src.database.storage_manager import StorageManager
+from src.distributor.ml_affiliate_api import MLAffiliateAPI
 
 logger = structlog.get_logger(__name__)
 
 
 class AffiliateLinkBuilder:
     """
-    Adiciona parâmetros de afiliado do ML à URL de um produto.
+    Gera links de afiliado oficiais via API do ML com cache no banco.
 
     Uso:
-        builder = AffiliateLinkBuilder()
-        affiliate_url = builder.build("https://www.mercadolivre.com.br/p/MLB123")
+        async with StorageManager() as storage:
+            builder = AffiliateLinkBuilder(storage, user_id="uuid-do-user")
+            link = await builder.get_or_create("https://...mercadolivre.com.br/p/MLB123")
+            print(link)  # https://meli.la/xxxxx
     """
 
-    def __init__(self):
-        self.cfg = settings.mercado_livre
-        tag = self.cfg.affiliate_tag
-        # Parâmetros de rastreamento do programa de afiliados ML
-        # Referência: documentação do ML Partners
-        self.affiliate_params = {
-            "matt_tool": "sem_googleads",  # Fonte (pode ser customizada)
-            "matt_word": tag,
-            "matt_source": "google",
-            "matt_campaign": tag,
-            "matt_ad_type": "pla",
-            "matt_creative_id": "sem",
-        }
+    def __init__(self, storage: StorageManager, user_id: str) -> None:
+        self._storage = storage
+        self._user_id = user_id
+        self._api = MLAffiliateAPI()
 
-    def build(self, product_url: str) -> str:
+    async def get_or_create(self, product_url: str, product_id: str) -> str:
         """
-        Adiciona parâmetros de afiliado à URL do produto.
+        Retorna o link de afiliado para um produto.
+        Usa cache do banco; se nao existir, gera via API.
 
         Args:
             product_url: URL original do produto no ML
+            product_id: UUID do produto no banco
 
         Returns:
-            URL com parâmetros de afiliado
+            short_url do afiliado (ex: https://meli.la/xxxxx)
+            ou string vazia se nao conseguir gerar.
         """
-        if not product_url or not self._is_ml_url(product_url):
-            logger.warning("invalid_ml_url", url=product_url)
-            return product_url
+        # 1. Cache hit?
+        cached = await self._storage.get_affiliate_link(product_id, self._user_id)
+        if cached:
+            return cached["short_url"]
 
-        try:
-            parsed = urlparse(product_url)
-            existing_params = parse_qs(parsed.query)
+        # 2. Gera via API
+        if not self._api.is_configured:
+            logger.warning("affiliate_api_not_configured", product_id=product_id)
+            return ""
 
-            # Combina params existentes com os de afiliado
-            # Parâmetros de afiliado têm prioridade
-            affiliate_params = {
-                **{k: [v[0]] for k, v in existing_params.items()},
-                **{k: [v] for k, v in self.affiliate_params.items()},
-            }
+        result = await self._api.create_link(product_url)
+        if not result:
+            return ""
 
-            # Adiciona ID de afiliado se configurado
-            if self.cfg.affiliate_id:
-                affiliate_params["matt_affiliate"] = [self.cfg.affiliate_id]
+        # 3. Salva no banco
+        await self._storage.save_affiliate_link(
+            product_id=product_id,
+            user_id=self._user_id,
+            short_url=result.short_url,
+            long_url=result.long_url,
+            ml_link_id=result.ml_link_id,
+        )
 
-            new_query = urlencode(
-                {k: v[0] for k, v in affiliate_params.items()},
-                doseq=False,
+        return result.short_url
+
+    async def get_or_create_batch(
+        self, products: dict[str, str]
+    ) -> dict[str, str]:
+        """
+        Gera links de afiliado para multiplos produtos.
+
+        Args:
+            products: Dict mapeando product_id -> product_url
+
+        Returns:
+            Dict mapeando product_id -> short_url
+        """
+        if not products:
+            return {}
+
+        product_ids = list(products.keys())
+        results: dict[str, str] = {}
+
+        # 1. Busca quais ja tem link no banco
+        missing = await self._storage.get_missing_affiliate_links(
+            self._user_id, product_ids
+        )
+
+        # Links ja existentes: busca do banco
+        cached_ids = [pid for pid in product_ids if pid not in missing]
+        for pid in cached_ids:
+            cached = await self._storage.get_affiliate_link(pid, self._user_id)
+            if cached:
+                results[pid] = cached["short_url"]
+
+        if not missing:
+            logger.info("affiliate_links_all_cached", count=len(results))
+            return results
+
+        # 2. Gera links faltantes via API
+        if not self._api.is_configured:
+            logger.warning(
+                "affiliate_api_not_configured",
+                missing=len(missing),
+            )
+            return results
+
+        urls_to_generate = {pid: products[pid] for pid in missing}
+        url_list = list(urls_to_generate.values())
+        pid_by_url = {url: pid for pid, url in urls_to_generate.items()}
+
+        api_results = await self._api.create_links_batch(url_list)
+
+        # 3. Salva novos links no banco
+        links_to_save: list[dict] = []
+        for origin_url, link in api_results.items():
+            pid = pid_by_url.get(origin_url)
+            if not pid:
+                continue
+            results[pid] = link.short_url
+            links_to_save.append(
+                {
+                    "product_id": pid,
+                    "user_id": self._user_id,
+                    "short_url": link.short_url,
+                    "long_url": link.long_url,
+                    "ml_link_id": link.ml_link_id,
+                }
             )
 
-            affiliate_url = urlunparse(parsed._replace(query=new_query))
-            logger.debug(
-                "affiliate_link_built", original=product_url, result=affiliate_url
-            )
-            return affiliate_url
+        if links_to_save:
+            await self._storage.save_affiliate_links_batch(links_to_save)
 
-        except Exception as exc:
-            logger.error("affiliate_link_error", url=product_url, error=str(exc))
-            return product_url
+        logger.info(
+            "affiliate_links_generated",
+            cached=len(cached_ids),
+            generated=len(links_to_save),
+            failed=len(missing) - len(links_to_save),
+        )
 
-    def _is_ml_url(self, url: str) -> bool:
-        """Verifica se a URL é do Mercado Livre."""
-        ml_domains = [
-            "mercadolivre.com.br",
-            "mercadolivre.com",
-            "mercadolibre.com",
-            "mlstatic.com",
-        ]
-        return any(domain in url for domain in ml_domains)
+        return results
 
-    def extract_ml_id(self, url: str) -> str:
+    @staticmethod
+    def extract_ml_id(url: str) -> str:
         """Extrai o ID do produto da URL."""
         match = re.search(r"(MLB\d+)", url, re.IGNORECASE)
         return match.group(1) if match else ""

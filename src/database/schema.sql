@@ -224,6 +224,45 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_details_gin
     ON system_logs USING gin(details);
 
 -- =============================================================================
+-- 7. users
+-- Usuários do sistema (multi-tenancy para afiliados).
+-- Cada user tem sua própria tag e cookies de sessão do ML.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS users (
+    id              UUID        DEFAULT uuid_generate_v4() PRIMARY KEY,
+    name            TEXT        NOT NULL,
+    affiliate_tag   TEXT        NOT NULL,
+    email           TEXT,
+    password_hash   TEXT,
+    ml_cookies      JSONB,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_affiliate_tag ON users(affiliate_tag);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
+    ON users(email) WHERE email IS NOT NULL;
+
+-- =============================================================================
+-- 8. affiliate_links
+-- Links de afiliado (produto × usuário).
+-- Um link por produto por usuário. Gerados pela API createLink do ML.
+-- short_url (meli.la/xxx) é permanente e garantidamente atribui comissão.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS affiliate_links (
+    id              UUID        DEFAULT uuid_generate_v4() PRIMARY KEY,
+    product_id      UUID        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    short_url       TEXT        NOT NULL,
+    long_url        TEXT,
+    ml_link_id      TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (product_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_affiliate_links_product_id ON affiliate_links(product_id);
+CREATE INDEX IF NOT EXISTS idx_affiliate_links_user_id ON affiliate_links(user_id);
+
+-- =============================================================================
 -- Row Level Security (RLS)
 -- service_role (chave server-side) tem acesso total via bypass.
 -- anon key tem acesso somente de leitura via policies explícitas.
@@ -236,7 +275,9 @@ ALTER TABLE products      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scored_offers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sent_offers   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE system_logs   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_logs      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE affiliate_links  ENABLE ROW LEVEL SECURITY;
 
 -- service_role bypassa RLS automaticamente — não precisa de policy.
 -- As policies abaixo são para o anon key (leitura pública dos dados de oferta).
@@ -299,6 +340,22 @@ CREATE POLICY "sent_offers_service_write"
 
 CREATE POLICY "system_logs_service_only"
     ON system_logs FOR ALL
+    USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "users_public_read"
+    ON users FOR SELECT USING (true);
+
+CREATE POLICY "users_service_write"
+    ON users FOR ALL
+    USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "affiliate_links_public_read"
+    ON affiliate_links FOR SELECT USING (true);
+
+CREATE POLICY "affiliate_links_service_write"
+    ON affiliate_links FOR ALL
     USING (auth.role() = 'service_role')
     WITH CHECK (auth.role() = 'service_role');
 

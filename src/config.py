@@ -114,10 +114,28 @@ class ShlinkConfig:
 
 @dataclass
 class MercadoLivreConfig:
-    affiliate_id: str = field(default_factory=lambda: os.getenv("ML_AFFILIATE_ID", ""))
     # Tag de rastreamento para os links
     affiliate_tag: str = field(
         default_factory=lambda: os.getenv("ML_AFFILIATE_TAG", "sempreblack")
+    )
+    # Cookies de sessão do ML para chamar a API createLink (JSON string)
+    # Exportar do navegador: _csrf, ssid, nsa_rotok, orguseridp, orgnickp
+    session_cookies: str = field(
+        default_factory=lambda: os.getenv("ML_SESSION_COOKIES", "")
+    )
+    # CSRF token (header x-csrf-token, necessário junto com cookie _csrf)
+    csrf_token: str = field(
+        default_factory=lambda: os.getenv("ML_CSRF_TOKEN", "")
+    )
+    # Credenciais do usuário DealHunter (temporário — via .env)
+    user_name: str = field(
+        default_factory=lambda: os.getenv("ML_USER_NAME", "")
+    )
+    user_email: str = field(
+        default_factory=lambda: os.getenv("ML_USER_EMAIL", "")
+    )
+    user_password: str = field(
+        default_factory=lambda: os.getenv("ML_USER_PASSWORD", "")
     )
 
 

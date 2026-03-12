@@ -685,6 +685,151 @@ class SupabaseClient:
             raise SupabaseError(str(exc), operation="get_recent_logs") from exc
 
     # ------------------------------------------------------------------
+    # users
+    # ------------------------------------------------------------------
+
+    async def get_or_create_user(
+        self,
+        name: str,
+        affiliate_tag: str,
+        email: str | None = None,
+        password_hash: str | None = None,
+        ml_cookies: dict | None = None,
+    ) -> Optional[str]:
+        """Retorna o ID do user pela tag. Cria se nao existir."""
+        try:
+            result = (
+                await self._db.table("users")
+                .select("id")
+                .eq("affiliate_tag", affiliate_tag)
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return result.data[0]["id"]
+            data: dict = {
+                "name": name,
+                "affiliate_tag": affiliate_tag,
+                "ml_cookies": ml_cookies,
+            }
+            if email:
+                data["email"] = email
+            if password_hash:
+                data["password_hash"] = password_hash
+            result = await self._db.table("users").insert(data).execute()
+            if result.data:
+                user_id: str = result.data[0]["id"]
+                logger.info("user_created", name=name, tag=affiliate_tag)
+                return user_id
+            return None
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="get_or_create_user") from exc
+
+    async def get_user_by_tag(self, affiliate_tag: str) -> Optional[dict]:
+        """Retorna o user completo pela tag."""
+        try:
+            result = (
+                await self._db.table("users")
+                .select("*")
+                .eq("affiliate_tag", affiliate_tag)
+                .limit(1)
+                .execute()
+            )
+            return result.data[0] if result.data else None
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="get_user_by_tag") from exc
+
+    # ------------------------------------------------------------------
+    # affiliate_links
+    # ------------------------------------------------------------------
+
+    async def get_affiliate_link(
+        self, product_id: str, user_id: str
+    ) -> Optional[dict]:
+        """Retorna o affiliate link para um produto+user, ou None."""
+        try:
+            result = (
+                await self._db.table("affiliate_links")
+                .select("*")
+                .eq("product_id", product_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            return result.data[0] if result.data else None
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="get_affiliate_link") from exc
+
+    async def save_affiliate_link(
+        self,
+        product_id: str,
+        user_id: str,
+        short_url: str,
+        long_url: str = "",
+        ml_link_id: str = "",
+    ) -> Optional[str]:
+        """Salva um affiliate link (upsert por product_id+user_id)."""
+        data = {
+            "product_id": product_id,
+            "user_id": user_id,
+            "short_url": short_url,
+            "long_url": long_url,
+            "ml_link_id": ml_link_id,
+        }
+        try:
+            result = (
+                await self._db.table("affiliate_links")
+                .upsert(data, on_conflict="product_id,user_id")
+                .execute()
+            )
+            if result.data:
+                return result.data[0]["id"]
+            return None
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="save_affiliate_link") from exc
+
+    async def get_missing_affiliate_links(
+        self, user_id: str, product_ids: list[str]
+    ) -> list[str]:
+        """Retorna product_ids que ainda nao tem affiliate link para este user."""
+        if not product_ids:
+            return []
+        try:
+            result = (
+                await self._db.table("affiliate_links")
+                .select("product_id")
+                .eq("user_id", user_id)
+                .in_("product_id", product_ids)
+                .execute()
+            )
+            existing = {row["product_id"] for row in (result.data or [])}
+            return [pid for pid in product_ids if pid not in existing]
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="get_missing_affiliate_links"
+            ) from exc
+
+    async def save_affiliate_links_batch(
+        self, links: list[dict]
+    ) -> list[str]:
+        """Salva multiplos affiliate links em uma chamada."""
+        if not links:
+            return []
+        try:
+            result = (
+                await self._db.table("affiliate_links")
+                .upsert(links, on_conflict="product_id,user_id")
+                .execute()
+            )
+            if not result.data:
+                return []
+            return [row["id"] for row in result.data]
+        except Exception as exc:
+            raise SupabaseError(
+                str(exc), operation="save_affiliate_links_batch"
+            ) from exc
+
+    # ------------------------------------------------------------------
     # Helpers internos
     # ------------------------------------------------------------------
 

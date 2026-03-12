@@ -28,7 +28,9 @@ TABLES_TO_TRUNCATE = [
     "sent_offers",      # FK: scored_offer_id
     "scored_offers",    # FK: product_id
     "price_history",    # FK: product_id
+    "affiliate_links",  # FK: product_id, user_id
     "products",         # FK: badge_id, category_id, marketplace_id
+    "users",            # sem FKs externas
     "system_logs",      # sem FKs
     "badges",           # lookup (products já foi limpa)
     "categories",       # lookup (products já foi limpa)

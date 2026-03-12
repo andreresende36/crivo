@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>DealHunter</h1>
+    <p class="subtitle">ML Cookie Extractor</p>
+
+    <button id="btn-extract" class="btn-primary">
+      <span id="btn-icon" class="icon">&#128274;</span>
+      <span id="btn-text">Copiar Cookies</span>
+    </button>
+
+    <div id="status" class="status hidden"></div>
+
+    <div id="details" class="details hidden">
+      <p><strong>Cookies:</strong> <span id="cookie-count">0</span> encontrados</p>
+      <p><strong>CSRF Token:</strong> <span id="csrf-status">-</span></p>
+    </div>
+
+    <p class="hint">
+      Abra <code>mercadolivre.com.br</code> e esteja logado antes de clicar.
+    </p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

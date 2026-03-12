@@ -103,7 +103,6 @@ def mock_settings():
 @pytest.fixture
 def mock_affiliate_settings():
     with patch("src.distributor.affiliate_links.settings") as mock:
-        mock.mercado_livre.affiliate_id = "test_affiliate_123"
         mock.mercado_livre.affiliate_tag = "sempreblack"
         yield mock
 
