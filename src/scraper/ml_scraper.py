@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -145,6 +147,10 @@ class MLScraper(BaseScraper):
         super().__init__()
         self._storage = storage
         self.sources = sources or self._default_sources()
+        # ID único da execução (usado para nomear o diretório de debug)
+        self.run_id: str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Screenshots dos cards: {ml_id: bytes_png} — populado se debug_screenshots=True
+        self.card_screenshots: dict[str, bytes] = {}
 
     def _default_sources(self) -> list[ScrapeSource]:
         """Gera fontes padrão: Ofertas do Dia."""
@@ -320,6 +326,10 @@ class MLScraper(BaseScraper):
             html = await page.content()
             page_products = self._parse_page(html, source)
 
+            # Debug: screenshot de cada card enquanto a página ainda está aberta
+            if settings.scraper.debug_screenshots and page_products:
+                await self._screenshot_cards(page, page_products)
+
             logger.info(
                 "page_parsed",
                 source=source.name,
@@ -451,6 +461,58 @@ class MLScraper(BaseScraper):
             logger.debug("pagination_check_error", error=str(exc))
 
         return None
+
+    # ------------------------------------------------------------------
+    # Debug: screenshot de cards (Playwright)
+    # ------------------------------------------------------------------
+
+    async def _screenshot_cards(
+        self, page: Page, products: list[ScrapedProduct]
+    ) -> None:
+        """
+        Tira screenshot de cada card de produto enquanto a página ainda está aberta.
+
+        Usa JavaScript evaluate_handle para localizar o elemento do card no DOM
+        pela URL do produto (que contém o ml_id), depois tira screenshot via
+        Playwright. Os bytes são armazenados em self.card_screenshots {ml_id: bytes}.
+        """
+        _JS = """
+        (mlId) => {
+            const links = Array.from(document.querySelectorAll('a[href]'));
+            const link = links.find(a => a.href && a.href.includes(mlId));
+            if (!link) return null;
+            return (
+                link.closest('.poly-card') ||
+                link.closest('li.promotion-item') ||
+                link.closest('li.ui-search-layout__item') ||
+                link.closest('div.ui-search-result__wrapper')
+            );
+        }
+        """
+        success = 0
+        for product in products:
+            if product.ml_id in self.card_screenshots:
+                continue  # já capturado em página anterior
+            try:
+                handle = await page.evaluate_handle(_JS, product.ml_id)
+                element = handle.as_element()
+                if element:
+                    screenshot_bytes = await element.screenshot()
+                    self.card_screenshots[product.ml_id] = screenshot_bytes
+                    success += 1
+                await handle.dispose()
+            except Exception as exc:
+                logger.debug(
+                    "card_screenshot_failed",
+                    ml_id=product.ml_id,
+                    error=str(exc),
+                )
+
+        logger.debug(
+            "cards_screenshotted",
+            success=success,
+            total=len(products),
+        )
 
     # ------------------------------------------------------------------
     # Parsing unificado

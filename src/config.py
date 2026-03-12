@@ -161,6 +161,8 @@ class ScraperConfig:
     proxy_url: Optional[str] = field(
         default_factory=lambda: os.getenv("SCRAPER_PROXY_URL")
     )
+    # Debug: salva screenshots dos cards rejeitados pelo score engine
+    debug_screenshots: bool = os.getenv("SCRAPER_DEBUG_SCREENSHOTS", "false").lower() == "true"
 
 
 # ---------------------------------------------------------------------------

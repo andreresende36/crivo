@@ -15,6 +15,7 @@ from src.config import settings
 from src.scraper.ml_scraper import MLScraper
 from src.analyzer.fake_discount_detector import FakeDiscountDetector
 from src.analyzer.score_engine import ScoreEngine
+from src.analyzer.card_debugger import generate_report
 from src.database.storage_manager import StorageManager
 from src.distributor.affiliate_links import AffiliateLinkBuilder
 from src.monitoring.alert_bot import AlertBot
@@ -101,11 +102,58 @@ async def run_pipeline() -> dict:
         # 4. SCORE — Avalia e filtra por pontuação mínima
         t0 = time.time()
         score_engine = ScoreEngine()
-        scored_products = score_engine.evaluate_batch(genuine_products)
+        all_scored = [score_engine.evaluate(p) for p in genuine_products]
+        scored_products = sorted(
+            [s for s in all_scored if s.passed],
+            key=lambda s: s.score,
+            reverse=True,
+        )
+        rejected_products = [s for s in all_scored if not s.passed]
+
+        # Log dos rejeitados (mantém comportamento original de evaluate_batch)
+        for s in rejected_products:
+            b = s.breakdown
+            logger.info(
+                "product_rejected",
+                ml_id=s.product.ml_id,
+                score=s.score,
+                reason=s.reject_reason,
+                url=s.product.url,
+                breakdown={
+                    "discount": b.discount.final_score,
+                    "badge": b.badge.final_score,
+                    "rating": b.rating.final_score,
+                    "reviews": b.reviews.final_score,
+                    "free_shipping": b.free_shipping.final_score,
+                    "installments": b.installments.final_score,
+                    "title": b.title_quality.final_score,
+                },
+            )
+        logger.info(
+            "batch_evaluated",
+            total=len(genuine_products),
+            approved=len(scored_products),
+            rejected=len(rejected_products),
+        )
+
         stats["scored"] = len(genuine_products)
         stats["approved"] = len(scored_products)
-        stats["rejected"] = len(genuine_products) - len(scored_products)
+        stats["rejected"] = len(rejected_products)
         timings["scoring"] = round(time.time() - t0, 2)
+
+        # Debug: gera relatório HTML com os cards rejeitados
+        if settings.scraper.debug_screenshots and rejected_products:
+            try:
+                report_path = generate_report(
+                    rejected=rejected_products,
+                    screenshots=scraper.card_screenshots,
+                    run_id=scraper.run_id,
+                    min_score=settings.score.min_score,
+                )
+                if report_path:
+                    logger.info("debug_report_ready", path=str(report_path))
+            except Exception as exc_dbg:
+                logger.warning("debug_report_failed", error=str(exc_dbg))
 
         # 5. SALVAR NO BANCO — Só produtos aprovados pelo score
         approved_products = [s.product for s in scored_products]
