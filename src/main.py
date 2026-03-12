@@ -110,24 +110,13 @@ async def run_pipeline() -> dict:
         )
         rejected_products = [s for s in all_scored if not s.passed]
 
-        # Log dos rejeitados (mantém comportamento original de evaluate_batch)
+        # Log resumido dos rejeitados — detalhes completos no index.html de debug
         for s in rejected_products:
-            b = s.breakdown
             logger.info(
                 "product_rejected",
                 ml_id=s.product.ml_id,
-                score=s.score,
+                score=round(s.score, 1),
                 reason=s.reject_reason,
-                url=s.product.url,
-                breakdown={
-                    "discount": b.discount.final_score,
-                    "badge": b.badge.final_score,
-                    "rating": b.rating.final_score,
-                    "reviews": b.reviews.final_score,
-                    "free_shipping": b.free_shipping.final_score,
-                    "installments": b.installments.final_score,
-                    "title": b.title_quality.final_score,
-                },
             )
         logger.info(
             "batch_evaluated",
