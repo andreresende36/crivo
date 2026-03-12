@@ -472,35 +472,43 @@ class MLScraper(BaseScraper):
         """
         Tira screenshot de cada card de produto enquanto a página ainda está aberta.
 
-        Usa JavaScript evaluate_handle para localizar o elemento do card no DOM
-        pela URL do produto (que contém o ml_id), depois tira screenshot via
-        Playwright. Os bytes são armazenados em self.card_screenshots {ml_id: bytes}.
+        Usa matching por posição DOM: re-parseia o HTML atual para descobrir o
+        índice de cada produto, depois screenshot pelo índice no Playwright.
+        Isso é robusto contra tracking URLs que não contêm o ml_id no href.
         """
-        _JS = """
-        (mlId) => {
-            const links = Array.from(document.querySelectorAll('a[href]'));
-            const link = links.find(a => a.href && a.href.includes(mlId));
-            if (!link) return null;
-            return (
-                link.closest('.poly-card') ||
-                link.closest('li.promotion-item') ||
-                link.closest('li.ui-search-layout__item') ||
-                link.closest('div.ui-search-result__wrapper')
-            );
-        }
-        """
+        from bs4 import BeautifulSoup
+
+        # Re-parseia o HTML atual para construir ml_id → índice DOM
+        html = await page.content()
+        soup = BeautifulSoup(html, "lxml")
+        items = soup.select(SELECTORS["card"])
+
+        index_map: dict[str, int] = {}
+        for idx, item in enumerate(items):
+            link_tag = item.select_one(SELECTORS["link"])
+            if not link_tag:
+                continue
+            raw_url = str(link_tag.get("href", ""))
+            mid = self._extract_ml_id(raw_url)
+            if mid:
+                index_map[mid] = idx
+
+        # Obtém todos os card elements do DOM via Playwright (mesma ordem)
+        card_locator = page.locator(SELECTORS["card"])
+        card_count = await card_locator.count()
+
         success = 0
         for product in products:
             if product.ml_id in self.card_screenshots:
-                continue  # já capturado em página anterior
+                continue
+            idx = index_map.get(product.ml_id)
+            if idx is None or idx >= card_count:
+                logger.debug("card_index_not_found", ml_id=product.ml_id)
+                continue
             try:
-                handle = await page.evaluate_handle(_JS, product.ml_id)
-                element = handle.as_element()
-                if element:
-                    screenshot_bytes = await element.screenshot()
-                    self.card_screenshots[product.ml_id] = screenshot_bytes
-                    success += 1
-                await handle.dispose()
+                screenshot_bytes = await card_locator.nth(idx).screenshot()
+                self.card_screenshots[product.ml_id] = screenshot_bytes
+                success += 1
             except Exception as exc:
                 logger.debug(
                     "card_screenshot_failed",

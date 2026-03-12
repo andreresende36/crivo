@@ -430,12 +430,36 @@ class BaseScraper(ABC):
     def _extract_ml_id(self, url: str) -> str | None:
         """
         Extrai o ID do produto da URL do ML.
-        Suporta formatos: MLB12345678, MLB-12345678.
-        Normaliza removendo o traço.
+
+        Ordem de prioridade:
+        1. /up/MLBU... no path  → Produto Universal (produto.mercadolivre.com.br/up/MLBU...)
+        2. wid=MLB...           → ID do listing vencedor (query/fragment)
+        3. MLB... no path       → ID de listing no path (antes do '?')
+        4. MLB... em qualquer lugar na URL (fallback)
+
+        Normaliza removendo o traço (MLB-12345 → MLB12345).
         """
+        # 1. Produto Universal: /up/MLBU...
+        up_match = re.search(r"/up/(MLBU\d+)", url, re.IGNORECASE)
+        if up_match:
+            return up_match.group(1)
+
+        # 2. wid= no query ou fragment (ID do listing vencedor)
+        wid_match = re.search(r"[?&#]wid=(MLB-?\d+)", url, re.IGNORECASE)
+        if wid_match:
+            return wid_match.group(1).replace("-", "")
+
+        # 3. MLB... no path (antes do '?')
+        path = url.split("?")[0]
+        path_match = re.search(r"\b(MLB-?\d+)\b", path, re.IGNORECASE)
+        if path_match:
+            return path_match.group(1).replace("-", "")
+
+        # 4. Fallback: qualquer MLB... na URL completa
         match = re.search(r"(MLB-?\d+)", url, re.IGNORECASE)
         if match:
             return match.group(1).replace("-", "")
+
         return None
 
     def _clean_price(self, raw: str) -> float | None:

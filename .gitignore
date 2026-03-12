@@ -29,3 +29,6 @@ logs/
 
 # Claude
 .claude/
+
+# Debug
+debug/
