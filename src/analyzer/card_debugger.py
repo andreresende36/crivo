@@ -10,6 +10,7 @@ Uso (chamado automaticamente em main.py quando SCRAPER_DEBUG_SCREENSHOTS=true):
 from __future__ import annotations
 
 import base64
+import io
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -61,10 +62,9 @@ h1 { font-size: 22px; margin-bottom: 6px; }
 .card-img {
     background: #fafafa;
     border-bottom: 1px solid #eee;
-    text-align: center;
-    padding: 8px;
+    overflow: hidden;
 }
-.card-img img { max-width: 100%; max-height: 280px; display: inline-block; }
+.card-img img { width: 100%; display: block; }
 .card-img .no-img { color: #aaa; font-size: 12px; padding: 40px 0; }
 .card-body { padding: 14px; }
 .card-title {
@@ -216,6 +216,59 @@ Score mínimo configurado: <strong>{min_score}</strong></p>
 # ---------------------------------------------------------------------------
 
 
+def _crop_info_section(img_bytes: bytes) -> bytes:
+    """
+    Remove a área branca superior (placeholder da foto do produto) do
+    screenshot do card, mantendo apenas a seção de informações:
+    badge, título, preço, avaliação e frete.
+
+    Algoritmo: escaneia as linhas de cima para baixo pela faixa central
+    da imagem (20 %–80 % da largura, para ignorar bordas/sombras
+    arredondadas). A primeira linha onde mais de 5 % das amostras tiver
+    pelo menos um canal RGB abaixo de 200 é considerada o início do
+    conteúdo visível. O corte é feito 8 px acima dessa linha.
+
+    Só corta se o espaço em branco superar 20 % da altura total.
+    Retorna os bytes originais se Pillow não estiver disponível ou em erro.
+    """
+    try:
+        from PIL import Image  # type: ignore[import-untyped]
+    except ImportError:
+        return img_bytes
+
+    try:
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        width, height = img.size
+
+        # Faixa central: ignora ~20 % de cada lado (bordas/sombras)
+        x0 = width // 5
+        x1 = 4 * width // 5
+        step = max(1, (x1 - x0) // 60)          # ~60 amostras por linha
+        n = len(range(x0, x1, step))
+
+        crop_top = 0
+        for y in range(8, height - 10):
+            colored = sum(
+                1
+                for x in range(x0, x1, step)
+                if min(img.getpixel((x, y))[:3]) < 200   # qualquer canal escuro
+            )
+            if colored / n > 0.05:               # > 5 % → linha com conteúdo
+                crop_top = max(0, y - 8)         # 8 px de margem acima
+                break
+
+        # Só corta se houver espaço em branco substancial (> 20 % da altura)
+        if crop_top > height * 0.20:
+            img = img.crop((0, crop_top, width, height))
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    except Exception:
+        return img_bytes  # fallback: retorna original intacto
+
+
 def _build_cards(
     ordered: list["ScoredProduct"],
     screenshots: dict[str, bytes],
@@ -226,12 +279,13 @@ def _build_cards(
         p = s.product
         b = s.breakdown
 
-        # --- Screenshot ---
+        # --- Screenshot (recorta espaço branco da foto do produto) ---
         if p.ml_id in screenshots:
-            b64 = base64.b64encode(screenshots[p.ml_id]).decode()
+            cropped = _crop_info_section(screenshots[p.ml_id])
+            b64 = base64.b64encode(cropped).decode()
             img_html = f'<img src="data:image/png;base64,{b64}" alt="card {p.ml_id}">'
         else:
-            img_html = '<div class="no-img">screenshot não disponível</div>'
+            img_html = '<div class="no-img" style="padding:40px 0;color:#aaa;font-size:12px">screenshot não disponível</div>'
 
         # --- Badge pill ---
         if p.badge:
