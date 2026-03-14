@@ -13,6 +13,37 @@ from src.scraper.base_scraper import ScrapedProduct
 
 logger = structlog.get_logger(__name__)
 
+# Caracteres que o MarkdownV2 do Telegram exige escape com '\'
+_MDV2_ESCAPE_CHARS = r'_*[]()~`>#+-=|{}.!'
+
+
+def _escape_mdv2(text: str) -> str:
+    """Escapa caracteres reservados do Telegram MarkdownV2."""
+    result = []
+    for ch in text:
+        if ch in _MDV2_ESCAPE_CHARS:
+            result.append('\\')
+        result.append(ch)
+    return ''.join(result)
+
+
+def _escape_mdv2_url(url: str) -> str:
+    """Escapa URL para uso dentro de (...) em inline links do MarkdownV2.
+
+    Conforme a spec do Telegram, dentro de () apenas ')' e '\\' precisam escape.
+    Na prática, o parser também quebra com outros chars — escapamos tudo que é reservado
+    exceto ':', '/' e '?' que são essenciais para URLs.
+    """
+    # Chars que NÃO devem ser escapados em URLs (estruturais)
+    url_safe = set(':/?=&#@%+,;')
+    result = []
+    for ch in url:
+        if ch in _MDV2_ESCAPE_CHARS and ch not in url_safe:
+            result.append('\\')
+        result.append(ch)
+    return ''.join(result)
+
+
 # Emojis por faixa de desconto
 DISCOUNT_EMOJIS = {
     80: "🔥🔥🔥",
@@ -23,16 +54,18 @@ DISCOUNT_EMOJIS = {
 }
 
 # Templates de mensagem
+# Nota: em MarkdownV2, chars como . - ! ( ) devem ser escapados no texto estático.
+# Dentro de [text](url), o text segue regras normais e a url só precisa escapar ) e \.
 TELEGRAM_TEMPLATE = """{discount_emoji} *{title}*
 
 💰 De ~~R$ {original_price}~~ por *R$ {price}*
-📉 *{discount_pct:.0f}% OFF*{free_shipping_line}
+📉 *{discount_pct}% OFF*{free_shipping_line}
 
 {description}
 
 {hashtags}
 
-🛒 [Comprar agora]({link})
+🛒 [Comprar agora\!]({link})
 ━━━━━━━━━━━━━━━
 _Sempre Black — Todo dia é Black Friday_ 🖤"""
 
@@ -57,7 +90,7 @@ TELEGRAM_TEMPLATE_NO_ORIGINAL = """{discount_emoji} *{title}*
 
 {hashtags}
 
-🛒 [Comprar agora]({link})
+🛒 [Comprar agora\!]({link})
 ━━━━━━━━━━━━━━━
 _Sempre Black — Todo dia é Black Friday_ 🖤"""
 
@@ -105,28 +138,39 @@ class MessageFormatter:
             else None
         )
 
-        # Telegram
-        if original_str:
+        # Telegram — escapa conteúdo dinâmico para MarkdownV2
+        esc_title = _escape_mdv2(title)
+        esc_price = _escape_mdv2(price_str)
+        esc_original = _escape_mdv2(original_str) if original_str else None
+        esc_discount = _escape_mdv2(f"{product.discount_pct:.0f}")
+        esc_desc = _escape_mdv2(description)
+        esc_tags = _escape_mdv2(tags)
+        esc_shipping = (
+            "\n✅ *Frete Grátis*" if product.free_shipping else ""
+        )
+        esc_link = _escape_mdv2_url(short_link)
+
+        if esc_original:
             telegram_text = TELEGRAM_TEMPLATE.format(
                 discount_emoji=discount_emoji,
-                title=title,
-                original_price=original_str,
-                price=price_str,
-                discount_pct=product.discount_pct,
-                free_shipping_line=free_shipping_line,
-                description=description,
-                hashtags=tags,
-                link=short_link,
+                title=esc_title,
+                original_price=esc_original,
+                price=esc_price,
+                discount_pct=esc_discount,
+                free_shipping_line=esc_shipping,
+                description=esc_desc,
+                hashtags=esc_tags,
+                link=esc_link,
             )
         else:
             telegram_text = TELEGRAM_TEMPLATE_NO_ORIGINAL.format(
                 discount_emoji=discount_emoji,
-                title=title,
-                price=price_str,
-                free_shipping_line=free_shipping_line,
-                description=description,
-                hashtags=tags,
-                link=short_link,
+                title=esc_title,
+                price=esc_price,
+                free_shipping_line=esc_shipping,
+                description=esc_desc,
+                hashtags=esc_tags,
+                link=esc_link,
             )
 
         # WhatsApp (sem markdown de link inline, sem tachado com ~~)

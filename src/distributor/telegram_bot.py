@@ -89,15 +89,63 @@ class TelegramBot:
             return await self._send_to_group(group_id, message)
 
         except TelegramError as exc:
-            logger.error(
-                "telegram_error",
+            # Fallback: tenta enviar sem parse_mode (texto puro com link visível)
+            logger.warning(
+                "telegram_mdv2_failed_retrying_plain",
                 group_id=group_id,
                 error=str(exc),
                 product_ml_id=message.product_ml_id,
             )
-            result["error"] = str(exc)
+            try:
+                fallback_text = self._build_plaintext_fallback(message)
+                if message.image_url:
+                    sent = await self.bot.send_photo(
+                        chat_id=group_id,
+                        photo=message.image_url,
+                        caption=fallback_text,
+                    )
+                else:
+                    sent = await self.bot.send_message(
+                        chat_id=group_id,
+                        text=fallback_text,
+                        disable_web_page_preview=False,
+                    )
+                result["success"] = True
+                result["message_id"] = sent.message_id
+                logger.info(
+                    "telegram_sent_plaintext_fallback",
+                    group_id=group_id,
+                    message_id=sent.message_id,
+                    product_ml_id=message.product_ml_id,
+                )
+            except TelegramError as exc2:
+                logger.error(
+                    "telegram_error",
+                    group_id=group_id,
+                    error=str(exc2),
+                    product_ml_id=message.product_ml_id,
+                )
+                result["error"] = str(exc2)
 
         return result
+
+    @staticmethod
+    def _build_plaintext_fallback(message: FormattedMessage) -> str:
+        """Gera versão texto puro da mensagem (sem MarkdownV2) com link visível."""
+        # Remove escapes de MarkdownV2 e syntax chars
+        import re
+        text = message.telegram_text
+        # Remove escapes (\. \- \! etc.)
+        text = re.sub(r'\\([_*\[\]()~`>#+=|{}.!\\-])', r'\1', text)
+        # Converte [text](url) para text + url na linha seguinte
+        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1\n🔗 \2', text)
+        # Remove ~~ (strikethrough syntax)
+        text = text.replace('~~', '')
+        # Remove * (bold syntax) — mantém o texto
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        # Remove _ (italic syntax)
+        text = re.sub(r'_([^_]+)_', r'\1', text)
+        return text
 
     async def _send_photo(self, group_id: str, message: FormattedMessage):
         """Envia mensagem com imagem do produto."""

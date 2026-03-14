@@ -76,7 +76,6 @@ class HealthCheck:
             self._check_supabase(),
             self._check_telegram(),
             self._check_whatsapp(),
-            self._check_shlink(),
             self._check_anthropic(),
             return_exceptions=True,
         )
@@ -173,26 +172,6 @@ class HealthCheck:
             )
         except Exception as exc:
             return ServiceStatus(name="whatsapp", healthy=False, error=str(exc))
-
-    async def _check_shlink(self) -> ServiceStatus:
-        """Verifica se o Shlink está respondendo."""
-        cfg = settings.shlink
-        start = time.monotonic()
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{cfg.api_url}/rest/v3/health",
-                    headers={"X-Api-Key": cfg.api_key},
-                )
-            latency = (time.monotonic() - start) * 1000
-            data = response.json()
-            return ServiceStatus(
-                name="shlink",
-                healthy=data.get("status") == "pass",
-                latency_ms=latency,
-            )
-        except Exception as exc:
-            return ServiceStatus(name="shlink", healthy=False, error=str(exc))
 
     async def _check_anthropic(self) -> ServiceStatus:
         """Verifica se a chave da API Anthropic é válida."""

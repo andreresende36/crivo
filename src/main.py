@@ -1,8 +1,8 @@
 """
 DealHunter — Entry Point Principal (Scraper Pipeline)
-Coleta ofertas do Mercado Livre, pontua e salva no banco.
+Coleta ofertas do Mercado Livre, pontua, salva e publica nos grupos.
 
-Fluxo: scraping cards → dedup → fake discount filter → score → salvar.
+Fluxo: scraping cards → dedup → fake filter → score → save → publish.
 """
 
 import asyncio
@@ -18,6 +18,8 @@ from src.analyzer.score_engine import ScoreEngine
 from src.analyzer.card_debugger import generate_report
 from src.database.storage_manager import StorageManager
 from src.distributor.affiliate_links import AffiliateLinkBuilder
+from src.distributor.message_formatter import MessageFormatter
+from src.distributor.telegram_bot import TelegramBot
 from src.monitoring.alert_bot import AlertBot
 from src.monitoring.health_check import HealthCheck
 
@@ -42,6 +44,8 @@ async def run_pipeline() -> dict:
         "rejected": 0,
         "saved": 0,
         "affiliate_links": 0,
+        "published": 0,
+        "publish_errors": 0,
         "errors": 0,
     }
     timings: dict[str, float] = {}
@@ -174,9 +178,12 @@ async def run_pipeline() -> dict:
                     for s in scored_products
                     if s.product.ml_id in ids
                 ]
+                scored_offer_ids: list[str] = []
                 if scored_entries:
                     try:
-                        await storage.save_scored_offers_batch(scored_entries)
+                        scored_offer_ids = await storage.save_scored_offers_batch(
+                            scored_entries
+                        )
                     except Exception as exc_so:
                         logger.warning(
                             "scored_offers_batch_save_failed",
@@ -185,6 +192,7 @@ async def run_pipeline() -> dict:
 
                 # 6. AFFILIATE LINKS — Gera links oficiais via API do ML
                 t1 = time.time()
+                aff_results: dict[str, str] = {}
                 try:
                     ml_cfg = settings.mercado_livre
                     user_id = await storage.get_or_create_user(
@@ -205,6 +213,73 @@ async def run_pipeline() -> dict:
                 except Exception as exc_aff:
                     logger.warning("affiliate_links_failed", error=str(exc_aff))
                 timings["affiliate_links"] = round(time.time() - t1, 2)
+
+                # 7. PUBLICAR NO TELEGRAM — Formata e envia ofertas aprovadas
+                t2 = time.time()
+                if settings.telegram.bot_token and settings.telegram.group_ids:
+                    try:
+                        telegram_bot = TelegramBot()
+                        formatter = MessageFormatter()
+
+                        for idx, s in enumerate(scored_products):
+                            product = s.product
+                            product_id = ids.get(product.ml_id)
+                            if not product_id:
+                                continue
+
+                            # Link de afiliado (meli.la) ou URL original do produto
+                            aff_url = aff_results.get(product_id, "") if aff_results else ""
+                            short_url = aff_url or product.url
+
+                            # Formatar mensagem
+                            msg = formatter.format(product, short_link=short_url)
+
+                            # Enviar para os grupos
+                            results = await telegram_bot.publish(msg)
+                            sent_ok = any(r["success"] for r in results)
+
+                            if sent_ok:
+                                stats["published"] += 1
+                                # Registrar no sent_offers
+                                scored_offer_id = (
+                                    scored_offer_ids[idx]
+                                    if idx < len(scored_offer_ids)
+                                    else None
+                                )
+                                if scored_offer_id:
+                                    try:
+                                        await storage.mark_as_sent(
+                                            scored_offer_id,
+                                            channel="telegram",
+                                            shlink_short_url=short_url,
+                                        )
+                                    except Exception as exc_mark:
+                                        logger.warning(
+                                            "mark_as_sent_failed",
+                                            ml_id=product.ml_id,
+                                            error=str(exc_mark),
+                                        )
+                            else:
+                                stats["publish_errors"] += 1
+                                for r in results:
+                                    if r.get("error"):
+                                        logger.warning(
+                                            "telegram_publish_failed",
+                                            ml_id=product.ml_id,
+                                            group_id=r["group_id"],
+                                            error=r["error"],
+                                        )
+
+                        logger.info(
+                            "telegram_publish_done",
+                            published=stats["published"],
+                            errors=stats["publish_errors"],
+                        )
+                    except Exception as exc_tg:
+                        logger.error("telegram_publish_error", error=str(exc_tg))
+                else:
+                    logger.info("telegram_skip_not_configured")
+                timings["publishing"] = round(time.time() - t2, 2)
 
             except Exception as exc:
                 logger.error("batch_save_failed", error=str(exc))

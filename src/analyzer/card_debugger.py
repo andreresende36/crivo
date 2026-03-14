@@ -155,7 +155,9 @@ def generate_report(
     ordered = sorted(rejected, key=lambda x: x.score, reverse=True)
 
     cards_html = _build_cards(ordered, screenshots)
-    avg_score = round(sum(s.score for s in rejected) / len(rejected), 1) if rejected else 0.0
+    avg_score = (
+        round(sum(s.score for s in rejected) / len(rejected), 1) if rejected else 0.0
+    )
     run_label = run_id.replace("_", " ")
 
     html = f"""<!DOCTYPE html>
@@ -243,7 +245,7 @@ def _crop_info_section(img_bytes: bytes) -> bytes:
         # Faixa central: ignora ~20 % de cada lado (bordas/sombras)
         x0 = width // 5
         x1 = 4 * width // 5
-        step = max(1, (x1 - x0) // 60)          # ~60 amostras por linha
+        step = max(1, (x1 - x0) // 60)  # ~60 amostras por linha
         n = len(range(x0, x1, step))
 
         crop_top = 0
@@ -251,10 +253,10 @@ def _crop_info_section(img_bytes: bytes) -> bytes:
             colored = sum(
                 1
                 for x in range(x0, x1, step)
-                if min(img.getpixel((x, y))[:3]) < 200   # qualquer canal escuro
+                if min(img.getpixel((x, y))[:3]) < 200  # qualquer canal escuro
             )
-            if colored / n > 0.05:               # > 5 % → linha com conteúdo
-                crop_top = max(0, y - 8)         # 8 px de margem acima
+            if colored / n > 0.05:  # > 5 % → linha com conteúdo
+                crop_top = max(0, y - 8)  # 8 px de margem acima
                 break
 
         # Só corta se houver espaço em branco substancial (> 20 % da altura)
@@ -295,13 +297,13 @@ def _build_cards(
 
         # --- Breakdown rows ---
         criteria = [
-            ("Desconto",      b.discount.final_score),
-            ("Badge",         b.badge.final_score),
-            ("Avaliação",     b.rating.final_score),
-            ("Reviews",       b.reviews.final_score),
-            ("Frete grátis",  b.free_shipping.final_score),
-            ("Parcelamento",  b.installments.final_score),
-            ("Título",        b.title_quality.final_score),
+            ("Desconto", b.discount.final_score),
+            ("Badge", b.badge.final_score),
+            ("Avaliação", b.rating.final_score),
+            ("Reviews", b.reviews.final_score),
+            ("Frete grátis", b.free_shipping.final_score),
+            ("Parcelamento", b.installments.final_score),
+            ("Título", b.title_quality.final_score),
         ]
         rows = ""
         for label, pts in criteria:
@@ -315,11 +317,7 @@ def _build_cards(
             if p.original_price
             else ""
         )
-        discount_str = (
-            f" &nbsp;-{p.discount_pct:.0f}%"
-            if p.discount_pct
-            else ""
-        )
+        discount_str = f" &nbsp;-{p.discount_pct:.0f}%" if p.discount_pct else ""
 
         title_short = (p.title[:70] + "…") if len(p.title) > 70 else p.title
         reason = s.reject_reason or "Rejeitado"
@@ -352,7 +350,8 @@ def _build_cards(
             ensure_ascii=False,
         )
 
-        html_parts.append(f"""
+        html_parts.append(
+            f"""
   <div class="card">
     <div class="card-img">{img_html}</div>
     <div class="card-body">
@@ -372,6 +371,7 @@ def _build_cards(
         <pre style="font-size:10px;color:#555;overflow:auto;margin-top:6px">{debug_json}</pre>
       </details>
     </div>
-  </div>""")
+  </div>"""
+        )
 
     return "\n".join(html_parts)

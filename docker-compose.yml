@@ -89,7 +89,7 @@ services:
       - "8080:8080"
     environment:
       - DEFAULT_DOMAIN=${SHLINK_DOMAIN:-localhost:8080}
-      - IS_HTTPS_ENABLED=false
+      - IS_HTTPS_ENABLED=${SHLINK_HTTPS_ENABLED:-false}
       - GEOLITE_LICENSE_KEY=${GEOLITE_LICENSE_KEY:-}
       # Banco: SQLite embutido (simples); trocar para PostgreSQL em produção
       - DB_DRIVER=sqlite
@@ -110,11 +110,11 @@ services:
   # Acesso: http://localhost:3000
   # Descomente se quiser a interface web
   # ---------------------------------------------------------------------------
-  # shlink-web:
-  #   image: shlinkio/shlink-web-client:stable
-  #   container_name: dealhunter_shlink_web
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:8080"
-  #   networks:
-  #     - dealhunter_net
+  shlink-web:
+    image: shlinkio/shlink-web-client:stable
+    container_name: dealhunter_shlink_web
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    networks:
+      - dealhunter_net
