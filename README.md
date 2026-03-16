@@ -4,11 +4,11 @@
 
 ## O que é
 
-O DealHunter monitora continuamente o Mercado Livre, filtra ofertas genuínas com regras e IA, e publica automaticamente nos grupos com links de afiliado encurtados.
+O DealHunter monitora continuamente o Mercado Livre, filtra ofertas genuínas com regras e IA, e publica automaticamente nos grupos com links de afiliado.
 
 **Pipeline principal:**
 ```
-Mercado Livre → Scraper → Dedup → Fake Filter → Score Engine → DB → Afiliado → Shlink → Telegram + WhatsApp
+Mercado Livre → Scraper → Dedup → Fake Filter → Score Engine → DB → Afiliado → Telegram + WhatsApp
 ```
 
 ---
@@ -22,7 +22,6 @@ Mercado Livre → Scraper → Dedup → Fake Filter → Score Engine → DB → 
 | IA de análise avançada | Claude Haiku — Fase 2 |
 | Banco principal | Supabase (PostgreSQL) |
 | Banco fallback | SQLite local (dual-write + sync automático) |
-| Encurtador | Shlink (self-hosted) |
 | Telegram | python-telegram-bot v21 |
 | WhatsApp | Evolution API |
 | Orquestração | n8n |
@@ -53,7 +52,6 @@ dealhunter/
 │   │   ├── message_formatter.py       # Templates de mensagem para Telegram e WhatsApp
 │   │   ├── affiliate_links.py         # Builder de links ML com cache em DB
 │   │   ├── ml_affiliate_api.py        # Wrapper da API de afiliados do ML
-│   │   ├── shlink_client.py           # Cliente Shlink para encurtamento de URLs
 │   │   ├── telegram_bot.py            # Publicação nos grupos do Telegram
 │   │   └── whatsapp_notifier.py       # Publicação nos grupos do WhatsApp
 │   │
@@ -201,11 +199,10 @@ python -m src.monitoring.health_check
 ### 6. Subir serviços auxiliares (Docker)
 
 ```bash
-docker compose up -d n8n shlink
+docker compose up -d n8n
 ```
 
 - **n8n**: http://localhost:5678
-- **Shlink**: http://localhost:8080
 
 ---
 
@@ -241,7 +238,6 @@ Ver `.env.example` para a lista completa.
 - [x] Health check de todos os serviços
 - [x] Message formatter (templates Telegram + WhatsApp)
 - [x] Affiliate link builder com cache em DB
-- [x] Shlink client para encurtamento de URLs
 - [x] Pipeline principal completo (scrape → dedup → fake filter → score → save)
 - [x] Debug HTML com screenshots dos cards rejeitados + breakdown de score
 

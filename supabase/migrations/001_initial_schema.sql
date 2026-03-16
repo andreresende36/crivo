@@ -95,7 +95,6 @@ CREATE TABLE IF NOT EXISTS sent_offers (
     id                  UUID    DEFAULT uuid_generate_v4() PRIMARY KEY,
     scored_offer_id     UUID    NOT NULL REFERENCES scored_offers(id) ON DELETE CASCADE,
     channel             TEXT    NOT NULL CHECK (channel IN ('telegram', 'whatsapp')),
-    shlink_short_url    TEXT    NOT NULL DEFAULT '',
     sent_at             TIMESTAMPTZ DEFAULT NOW(),
     clicks              INTEGER DEFAULT 0
 );

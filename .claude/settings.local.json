@@ -20,7 +20,11 @@
       "Bash(git commit:*)",
       "mcp__supabase__get_advisors",
       "Bash(python3 -c \"from PIL import Image; print\\(''Pillow available''\\)\")",
-      "Bash(python3 -:*)"
+      "Bash(python3 -:*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''src/main.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(git add:*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''src/database/storage_manager.py''\\).read\\(\\)\\); ast.parse\\(open\\(''src/database/sqlite_fallback.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \":*)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -2,7 +2,7 @@ version: "3.9"
 
 # =============================================================================
 # DealHunter — Docker Compose
-# Serviços: dealhunter app, n8n (orquestrador), shlink (encurtador)
+# Serviços: dealhunter app, n8n (orquestrador)
 # Uso: docker compose up -d
 # =============================================================================
 
@@ -12,7 +12,6 @@ networks:
 
 volumes:
   n8n_data:
-  shlink_data:
   dealhunter_data:
 
 services:
@@ -33,8 +32,6 @@ services:
       - ./logs:/app/logs
     networks:
       - dealhunter_net
-    depends_on:
-      - shlink
     environment:
       - APP_ENV=${APP_ENV:-development}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -76,45 +73,3 @@ services:
       timeout: 10s
       retries: 3
 
-  # ---------------------------------------------------------------------------
-  # Shlink — Encurtador de links + analytics
-  # Acesso: http://localhost:8080
-  # Docs: https://shlink.io
-  # ---------------------------------------------------------------------------
-  shlink:
-    image: shlinkio/shlink:stable
-    container_name: dealhunter_shlink
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      - DEFAULT_DOMAIN=${SHLINK_DOMAIN:-localhost:8080}
-      - IS_HTTPS_ENABLED=${SHLINK_HTTPS_ENABLED:-false}
-      - GEOLITE_LICENSE_KEY=${GEOLITE_LICENSE_KEY:-}
-      # Banco: SQLite embutido (simples); trocar para PostgreSQL em produção
-      - DB_DRIVER=sqlite
-      - INITIAL_API_KEY=${SHLINK_API_KEY:-changeme-shlink-key}
-      - TZ=America/Sao_Paulo
-    volumes:
-      - shlink_data:/etc/shlink/data
-    networks:
-      - dealhunter_net
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/rest/v3/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # ---------------------------------------------------------------------------
-  # (Opcional) Shlink Web Client — Interface gráfica para o Shlink
-  # Acesso: http://localhost:3000
-  # Descomente se quiser a interface web
-  # ---------------------------------------------------------------------------
-  shlink-web:
-    image: shlinkio/shlink-web-client:stable
-    container_name: dealhunter_shlink_web
-    restart: unless-stopped
-    ports:
-      - "3000:8080"
-    networks:
-      - dealhunter_net
