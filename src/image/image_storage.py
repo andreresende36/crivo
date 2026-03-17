@@ -43,7 +43,7 @@ async def upload_to_supabase(
     """
     from supabase import acreate_client
 
-    bucket = settings.image_worker.supabase_bucket
+    bucket = settings.sender.supabase_bucket
     path = f"products/{product_id}/enhanced.{ext}"
 
     try:
@@ -88,7 +88,7 @@ async def get_enhanced_url(product_id: str) -> str | None:
     """
     from supabase import acreate_client
 
-    bucket = settings.image_worker.supabase_bucket
+    bucket = settings.sender.supabase_bucket
 
     try:
         client = await acreate_client(

@@ -14,7 +14,6 @@ SELECT
     c.name          AS category,
     so.id           AS scored_offer_id,
     so.final_score,
-    so.ai_description,
     so.scored_at
 FROM scored_offers so
 JOIN products p ON p.id = so.product_id
