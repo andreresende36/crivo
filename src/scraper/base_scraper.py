@@ -94,8 +94,9 @@ class ScrapedProduct:
 
     # Dados básicos
     title: str
-    price: float  # Preço atual em BRL
+    price: float  # Preço atual em BRL (cartão/parcelado — preço "universal")
     original_price: Optional[float]  # Preço antes do desconto (se disponível)
+    pix_price: Optional[float] = None  # Preço com desconto Pix/boleto (se diferente de price)
     discount_pct: float = 0.0  # Percentual de desconto calculado
 
     # Metadata
@@ -113,8 +114,10 @@ class ScrapedProduct:
     marketplace: str = "Mercado Livre"  # Marketplace de origem
 
     def __post_init__(self):
-        if self.original_price and self.original_price > self.price:
-            self.discount_pct = round((1 - self.price / self.original_price) * 100, 1)
+        # Desconto baseado no preço Pix se disponível, senão no preço cartão
+        effective_price = self.pix_price if self.pix_price else self.price
+        if self.original_price and self.original_price > effective_price:
+            self.discount_pct = round((1 - effective_price / self.original_price) * 100, 1)
 
     def to_dict(self) -> dict:
         """Serializa para dicionário (útil para salvar no banco)."""
@@ -124,6 +127,7 @@ class ScrapedProduct:
             "title": self.title,
             "price": self.price,
             "original_price": self.original_price,
+            "pix_price": self.pix_price,
             "discount_pct": self.discount_pct,
             "rating": self.rating,
             "review_count": self.review_count,

@@ -78,7 +78,10 @@ SELECTORS = {
     "fraction": ".andes-money-amount__fraction",
     "cents": ".andes-money-amount__cents",
     # Preço original (riscado) — poly- e ui-search-
-    "price_original_container": ("s.poly-price__original, " ".poly-price__comparison"),
+    "price_original_container": (
+        "s.poly-price__original, "
+        "s.andes-money-amount--previous"
+    ),
     "price_original_search": (
         "del.ui-search-price__original-value "
         "span.andes-money-amount__fraction, "
@@ -569,8 +572,8 @@ class MLScraper(BaseScraper):
             if not title:
                 return None
 
-            # --- Preço atual ---
-            price = self._get_current_price(item)
+            # --- Preços (atual + Pix se aplicável) ---
+            price, pix_price = self._get_prices(item)
             if price is None or price <= 0:
                 return None
 
@@ -621,6 +624,7 @@ class MLScraper(BaseScraper):
                 title=title,
                 price=price,
                 original_price=original_price,
+                pix_price=pix_price,
                 rating=rating,
                 review_count=review_count,
                 category=get_product_category(title),
@@ -645,25 +649,72 @@ class MLScraper(BaseScraper):
     # Extração de preço (robusto: fraction + cents)
     # ------------------------------------------------------------------
 
-    def _get_current_price(self, card: Tag) -> float | None:
-        """Extrai o preço atual de um card (fraction + cents se disponível)."""
-        # Estratégia 1: container .poly-price__current
+    def _get_prices(self, card: Tag) -> tuple[float | None, float | None]:
+        """Extrai preço do cartão e preço Pix de um card.
+
+        Retorna (card_price, pix_price):
+        - card_price: preço "universal" (cartão/parcelado) — sempre presente
+        - pix_price: preço com desconto Pix/boleto — None se não houver
+
+        Quando o card exibe um preço de meio de pagamento (Pix, boleto),
+        o valor em .poly-price__current é o preço Pix.
+        O preço listado real aparece em .poly-price__installments
+        como "ou R$ X.XXX em Nx ...".
+        """
         container = card.select_one(SELECTORS["price_current_container"])
         if container:
+            if self._is_payment_method_price(container):
+                # O preço principal exibido é o Pix
+                pix_price = self._price_from_andes(container)
+                # O preço "real" (cartão) está nas parcelas
+                card_price = self._get_listed_price(card)
+                if card_price and pix_price:
+                    return card_price, pix_price
+                # Fallback: se não encontrou preço de parcela, usa o Pix como preço
+                if pix_price:
+                    return pix_price, None
+
+            # Preço normal (sem desconto de meio de pagamento)
             price = self._price_from_andes(container)
             if price:
-                return price
+                return price, None
 
-        # Estratégia 2: primeiro fraction que NÃO esteja em <s>/<del>
+        # Fallback: primeiro fraction que NÃO esteja em <s>/<del>
         for fraction in card.select(SELECTORS["fraction"]):
             if not fraction.find_parent(["s", "del"]):
-                return self._clean_price(fraction.get_text(strip=True))
+                price = self._clean_price(fraction.get_text(strip=True))
+                return price, None
 
+        return None, None
+
+    def _is_payment_method_price(self, container: Tag) -> bool:
+        """Detecta se .poly-price__current exibe preço de meio de pagamento."""
+        disc_el = container.select_one(
+            ".andes-money-amount__discount, .poly-price__disc_label"
+        )
+        if not disc_el:
+            return False
+        text = disc_el.get_text(strip=True).lower()
+        return any(kw in text for kw in ("pix", "boleto"))
+
+    def _get_listed_price(self, card: Tag) -> float | None:
+        """Extrai o preço listado real da seção de parcelamento.
+
+        Em cards com preço Pix, a estrutura é:
+          .poly-price__installments → "ou R$ 2.478 em 10x R$ 247,83 sem juros"
+        O primeiro andes-money-amount.poly-phrase-price é o preço listado.
+        """
+        installments = card.select_one(SELECTORS["installments"])
+        if not installments:
+            return None
+        amounts = installments.select("span.andes-money-amount.poly-phrase-price")
+        if amounts:
+            return self._price_from_andes(amounts[0])
         return None
 
     def _get_original_price(self, card: Tag) -> float | None:
         """Extrai o preço original (riscado / antes do desconto)."""
-        # Estratégia 1: container poly-price__original
+        # Estratégia 1: container com classe conhecida
         for selector in SELECTORS["price_original_container"].split(", "):
             container = card.select_one(selector)
             if container:
@@ -671,19 +722,19 @@ class MLScraper(BaseScraper):
                 if price:
                     return price
 
-        # Estratégia 2: seletores de busca (del, s)
+        # Estratégia 2: <s> ou <del> com andes-money-amount (extrai fraction + cents)
+        for tag_name in ("s", "del"):
+            parent = card.select_one(tag_name)
+            if parent:
+                price = self._price_from_andes(parent)
+                if price:
+                    return price
+
+        # Estratégia 3: seletores de busca legados (ui-search-)
         for selector in SELECTORS["price_original_search"].split(", "):
             tag = card.select_one(selector)
             if tag:
                 return self._clean_price(tag.get_text(strip=True))
-
-        # Estratégia 3: fraction dentro de <s> ou <del>
-        for tag_name in ("s", "del"):
-            parent = card.select_one(tag_name)
-            if parent:
-                fraction = parent.select_one(SELECTORS["fraction"])
-                if fraction:
-                    return self._clean_price(fraction.get_text(strip=True))
 
         return None
 

@@ -71,9 +71,10 @@ class SQLiteFallback:
     async def initialize(self) -> None:
         """Abre (ou cria) o banco SQLite e garante que o schema existe."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = await aiosqlite.connect(str(self.db_path))
+        conn = await aiosqlite.connect(str(self.db_path), timeout=30)
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA busy_timeout=30000")
         await conn.execute("PRAGMA foreign_keys=ON")
         self._conn = conn
         await self._create_schema()
@@ -128,7 +129,8 @@ class SQLiteFallback:
             title             TEXT NOT NULL,
             current_price     REAL NOT NULL,
             original_price    REAL,
-            discount_percent  INTEGER DEFAULT 0,
+            pix_price         REAL,
+            discount_percent  REAL DEFAULT 0,
             rating_stars      REAL DEFAULT 0,
             rating_count      INTEGER DEFAULT 0,
             free_shipping     INTEGER DEFAULT 0,
@@ -245,24 +247,31 @@ class SQLiteFallback:
         CREATE INDEX IF NOT EXISTS idx_al_synced ON affiliate_links(synced);
 
         -- Views (SQLite usa datetime() em vez de NOW() - INTERVAL)
-        CREATE VIEW IF NOT EXISTS vw_approved_unsent AS
+        DROP VIEW IF EXISTS vw_approved_unsent;
+        CREATE VIEW vw_approved_unsent AS
         SELECT
             p.id            AS product_id,
             p.ml_id,
             p.title,
             p.current_price,
             p.original_price,
+            p.pix_price,
             p.discount_percent,
             p.free_shipping,
             p.thumbnail_url,
             p.product_url,
+            p.rating_stars,
+            p.rating_count,
+            p.installments_without_interest,
             c.name          AS category,
+            b.name          AS badge,
             so.id           AS scored_offer_id,
             so.final_score,
             so.scored_at
         FROM scored_offers so
         JOIN products p ON p.id = so.product_id
         LEFT JOIN categories c ON c.id = p.category_id
+        LEFT JOIN badges b ON b.id = p.badge_id
         WHERE so.status = 'approved'
           AND so.final_score >= 60
           AND NOT EXISTS (
@@ -290,6 +299,7 @@ class SQLiteFallback:
             p.title,
             p.current_price,
             p.original_price,
+            p.pix_price,
             p.discount_percent,
             p.free_shipping,
             c.name          AS category,
@@ -312,6 +322,7 @@ class SQLiteFallback:
             ("category_id", "TEXT REFERENCES categories(id)"),
             ("marketplace_id", "TEXT REFERENCES marketplaces(id)"),
             ("installments_without_interest", "INTEGER DEFAULT 0"),
+            ("pix_price", "REAL"),
         ]:
             try:
                 await self._db.execute(f"ALTER TABLE products ADD COLUMN {col} {ref}")
@@ -753,7 +764,7 @@ class SQLiteFallback:
                     """
                     UPDATE products SET
                         title=?, current_price=?, original_price=?,
-                        discount_percent=?,
+                        pix_price=?, discount_percent=?,
                         rating_stars=?, rating_count=?,
                         free_shipping=?, installments_without_interest=?, thumbnail_url=?,
                         product_url=?, category_id=?, badge_id=?, marketplace_id=?,
@@ -764,7 +775,8 @@ class SQLiteFallback:
                         product.title,
                         product.price,
                         product.original_price,
-                        int(product.discount_pct),
+                        product.pix_price,
+                        round(product.discount_pct, 1),
                         product.rating,
                         product.review_count,
                         int(product.free_shipping),
@@ -785,12 +797,12 @@ class SQLiteFallback:
                     """
                     INSERT INTO products (
                         id, ml_id, title, current_price, original_price,
-                        discount_percent,
+                        pix_price, discount_percent,
                         rating_stars, rating_count,
                         free_shipping, installments_without_interest, thumbnail_url, product_url,
                         category_id, badge_id, marketplace_id,
                         first_seen_at, last_seen_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         product_id,
@@ -798,7 +810,8 @@ class SQLiteFallback:
                         product.title,
                         product.price,
                         product.original_price,
-                        int(product.discount_pct),
+                        product.pix_price,
+                        round(product.discount_pct, 1),
                         product.rating,
                         product.review_count,
                         int(product.free_shipping),
@@ -895,7 +908,7 @@ class SQLiteFallback:
                         """
                         UPDATE products SET
                             title=?, current_price=?, original_price=?,
-                            discount_percent=?,
+                            pix_price=?, discount_percent=?,
                             rating_stars=?, rating_count=?,
                             free_shipping=?, installments_without_interest=?, thumbnail_url=?,
                             product_url=?, category_id=?, badge_id=?, marketplace_id=?,
@@ -906,7 +919,8 @@ class SQLiteFallback:
                             p.title,
                             p.price,
                             p.original_price,
-                            int(p.discount_pct),
+                            p.pix_price,
+                            round(p.discount_pct, 1),
                             p.rating,
                             p.review_count,
                             int(p.free_shipping),
@@ -928,13 +942,13 @@ class SQLiteFallback:
                         """
                         INSERT INTO products (
                             id, ml_id, title, current_price,
-                            original_price, discount_percent,
+                            original_price, pix_price, discount_percent,
                             rating_stars, rating_count,
                             free_shipping, installments_without_interest, thumbnail_url,
                             product_url, category_id, badge_id, marketplace_id,
                             first_seen_at, last_seen_at
                         ) VALUES (
-                            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                         )
                         """,
                         (
@@ -943,7 +957,8 @@ class SQLiteFallback:
                             p.title,
                             p.price,
                             p.original_price,
-                            int(p.discount_pct),
+                            p.pix_price,
+                            round(p.discount_pct, 1),
                             p.rating,
                             p.review_count,
                             int(p.free_shipping),
@@ -1014,12 +1029,12 @@ class SQLiteFallback:
                 """
                 INSERT OR IGNORE INTO products (
                     id, ml_id, title, current_price, original_price,
-                    discount_percent,
+                    pix_price, discount_percent,
                     rating_stars, rating_count,
                     free_shipping, installments_without_interest, thumbnail_url, product_url,
                     category_id, badge_id,
                     first_seen_at, last_seen_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     str(data.get("id", "")),
@@ -1027,7 +1042,8 @@ class SQLiteFallback:
                     str(data.get("title", "")),
                     float(data.get("current_price", 0)),
                     data.get("original_price"),
-                    int(data.get("discount_percent", 0)),
+                    data.get("pix_price"),
+                    round(float(data.get("discount_percent", 0)), 1),
                     float(data.get("rating_stars", 0)),
                     int(data.get("rating_count", 0)),
                     int(bool(data.get("free_shipping", False))),
@@ -1351,6 +1367,7 @@ class SQLiteFallback:
                     p.title,
                     p.current_price,
                     p.original_price,
+                    p.pix_price,
                     p.discount_percent,
                     p.free_shipping,
                     p.thumbnail_url,

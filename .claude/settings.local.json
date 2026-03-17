@@ -32,7 +32,9 @@
       "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in [''src/config.py'', ''src/sender.py'', ''src/image/lifestyle_generator.py'']]; print\\(''All files parse OK''\\)\")",
       "Bash(pip install:*)",
       "Read(//Users/andreresende/.asdf/installs/python/3.11.14/lib/python3.11/site-packages/storage3/_async/**)",
-      "Read(//Users/andreresende/.asdf/installs/python/3.11.14/lib/python3.11/site-packages/**)"
+      "Read(//Users/andreresende/.asdf/installs/python/3.11.14/lib/python3.11/site-packages/**)",
+      "Bash(python /tmp/verify_price_fix.py)",
+      "Bash(ls -la /Users/andreresende/Apps/dealhunter/data/*.db)"
     ]
   },
   "enableAllProjectMcpServers": true,

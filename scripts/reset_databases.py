@@ -104,7 +104,58 @@ async def truncate_supabase() -> None:
         await supabase.close()
 
 
-async def main(include_supabase: bool = False) -> None:
+async def clear_supabase_storage(bucket: str = "images", folder: str = "products") -> int:
+    """
+    Apaga todos os arquivos de uma pasta no Supabase Storage.
+    Retorna o número de arquivos deletados.
+    """
+    supabase = SupabaseClient()
+    deleted = 0
+
+    try:
+        await supabase.connect()
+        client = supabase._db
+
+        # Lista todos os arquivos na pasta (paginação de 100)
+        all_paths: list[str] = []
+        offset = 0
+        limit = 100
+
+        while True:
+            items = await client.storage.from_(bucket).list(
+                folder,
+                {"limit": limit, "offset": offset}
+            )
+            if not items:
+                break
+            all_paths.extend(f"{folder}/{item['name']}" for item in items)
+            if len(items) < limit:
+                break
+            offset += limit
+
+        if not all_paths:
+            logger.info("storage_folder_empty", bucket=bucket, folder=folder)
+            return 0
+
+        # Deleta em batches de 100
+        batch_size = 100
+        for i in range(0, len(all_paths), batch_size):
+            batch = all_paths[i:i + batch_size]
+            await client.storage.from_(bucket).remove(batch)
+            deleted += len(batch)
+            logger.info("storage_batch_deleted", count=len(batch))
+
+        logger.info("storage_cleared", bucket=bucket, folder=folder, total=deleted)
+        return deleted
+
+    except Exception as e:
+        logger.error("storage_clear_failed", bucket=bucket, folder=folder, error=str(e))
+        raise
+    finally:
+        await supabase.close()
+
+
+async def main(include_supabase: bool = False, clear_storage: bool = False) -> None:
     """Executa o reset."""
     print("\n" + "=" * 70)
     print("DealHunter — Reset Databases (Opção A: Truncate)")
@@ -116,6 +167,11 @@ async def main(include_supabase: bool = False) -> None:
         print("⚠️  Supabase: SIM (vai truncar remoto também)")
     else:
         print("⚠️  Supabase: NÃO (apenas SQLite local)")
+
+    if clear_storage:
+        print("⚠️  Storage: SIM (vai apagar images/products do Supabase Storage)")
+    else:
+        print("⚠️  Storage: NÃO (imagens serão mantidas)")
 
     print("\n" + "-" * 70)
     response = input("Tem certeza? (digite 'SIM' para confirmar): ").strip()
@@ -140,6 +196,14 @@ async def main(include_supabase: bool = False) -> None:
         except Exception as e:
             print(f"⚠️  Erro ao truncar Supabase (SQLite já foi truncado): {e}\n")
 
+    if clear_storage:
+        print("🗑️  Apagando imagens do Supabase Storage (images/products)...")
+        try:
+            count = await clear_supabase_storage(bucket="images", folder="products")
+            print(f"✅ {count} arquivo(s) deletado(s) do Storage!\n")
+        except Exception as e:
+            print(f"⚠️  Erro ao limpar Storage: {e}\n")
+
     print("=" * 70)
     print("✨ Reset concluído! Bancos estão zerados e prontos para novos dados.")
     print("=" * 70 + "\n")
@@ -161,6 +225,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Também trunca Supabase (se configurado)"
     )
+    parser.add_argument(
+        "--clear-storage",
+        action="store_true",
+        help="Apaga todos os arquivos em images/products no Supabase Storage"
+    )
 
     args = parser.parse_args()
 
@@ -168,4 +237,4 @@ if __name__ == "__main__":
         print("❌ Use: python scripts/reset_databases.py --truncate")
         sys.exit(1)
 
-    asyncio.run(main(include_supabase=args.include_supabase))
+    asyncio.run(main(include_supabase=args.include_supabase, clear_storage=args.clear_storage))

@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS products (
     title               TEXT        NOT NULL,
     current_price       DECIMAL(10,2) NOT NULL,
     original_price      DECIMAL(10,2),
-    discount_percent    INTEGER     DEFAULT 0,
+    pix_price           DECIMAL(10,2),          -- Preço com desconto Pix/boleto (NULL se igual ao current)
+    discount_percent    DECIMAL(4,1) DEFAULT 0,
     rating_stars        DECIMAL(3,1) DEFAULT 0,
     rating_count        INTEGER     DEFAULT 0,
     free_shipping       BOOLEAN     DEFAULT FALSE,
@@ -370,18 +371,23 @@ SELECT
     p.title,
     p.current_price,
     p.original_price,
+    p.pix_price,
     p.discount_percent,
     p.free_shipping,
     p.thumbnail_url,
     p.product_url,
+    p.rating_stars,
+    p.rating_count,
+    p.installments_without_interest,
     c.name          AS category,
+    b.name          AS badge,
     so.id           AS scored_offer_id,
     so.final_score,
-    so.ai_description,
     so.scored_at
 FROM scored_offers so
 JOIN products p ON p.id = so.product_id
 LEFT JOIN categories c ON c.id = p.category_id
+LEFT JOIN badges b ON b.id = p.badge_id
 WHERE so.status = 'approved'
   AND so.final_score >= 60
   AND NOT EXISTS (
@@ -411,6 +417,7 @@ SELECT
     p.title,
     p.current_price,
     p.original_price,
+    p.pix_price,
     p.discount_percent,
     p.free_shipping,
     c.name          AS category,
