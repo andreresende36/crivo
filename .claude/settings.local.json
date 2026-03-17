@@ -29,7 +29,10 @@
       "Bash(sqlite3 /Users/andreresende/Apps/dealhunter/data/dealhunter.db \"PRAGMA table_info\\(scored_offers\\);\")",
       "Bash(sqlite3 --version)",
       "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in [''src/config.py'', ''src/main.py'', ''src/sender.py'', ''src/runner.py'']]; print\\(''All files parse OK''\\)\")",
-      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in [''src/config.py'', ''src/sender.py'', ''src/image/lifestyle_generator.py'']]; print\\(''All files parse OK''\\)\")"
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in [''src/config.py'', ''src/sender.py'', ''src/image/lifestyle_generator.py'']]; print\\(''All files parse OK''\\)\")",
+      "Bash(pip install:*)",
+      "Read(//Users/andreresende/.asdf/installs/python/3.11.14/lib/python3.11/site-packages/storage3/_async/**)",
+      "Read(//Users/andreresende/.asdf/installs/python/3.11.14/lib/python3.11/site-packages/**)"
     ]
   },
   "enableAllProjectMcpServers": true,
