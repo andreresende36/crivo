@@ -88,8 +88,15 @@ async def _generate_and_upload_image(
 ) -> str | None:
     """
     Gera imagem lifestyle e faz upload para Supabase Storage.
+    Reutiliza imagem existente se já houver uma gerada para este produto.
     Retorna a URL pública da imagem ou None se todas as tentativas falharem.
     """
+    # Reutiliza imagem já gerada — evita custo de API duplicado
+    existing_url = await storage.get_enhanced_image_url(product_id)
+    if existing_url:
+        logger.info("lifestyle_reusing_existing", ml_id=ml_id, url=existing_url[:80])
+        return existing_url
+
     max_retries = settings.sender.image_max_retries
 
     for attempt in range(1, max_retries + 1):
