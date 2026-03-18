@@ -65,14 +65,17 @@ class UnsentOfferRow(TypedDict):
 def _offer_to_product(offer: UnsentOfferRow) -> ScrapedProduct:
     """Converte a linha da view vw_approved_unsent em ScrapedProduct."""
     pix_price_raw = offer.get("pix_price")
+    orig_price_raw = offer.get("original_price")
     return ScrapedProduct(
         ml_id=offer["ml_id"],
         url=offer["product_url"],
         title=offer["title"],
         price=float(offer["current_price"]),
-        original_price=float(offer["original_price"]) if offer.get("original_price") else None,
+        original_price=(
+            float(orig_price_raw) if orig_price_raw is not None else None
+        ),
         pix_price=float(pix_price_raw) if pix_price_raw else None,
-        discount_pct=float(offer.get("discount_percent", 0)),
+        discount_pct=float(offer.get("discount_percent") or 0),
         rating=float(offer.get("rating_stars") or 0),
         review_count=int(offer.get("rating_count") or 0),
         category=offer.get("category") or "",
@@ -149,10 +152,11 @@ async def send_next_offer(
     Returns:
         True se uma oferta foi enviada, False se a fila está vazia.
     """
-    offer: UnsentOfferRow | None = await storage.get_next_unsent_offer()
-    if not offer:
+    raw_offer = await storage.get_next_unsent_offer()
+    if not raw_offer:
         logger.debug("send_queue_empty")
         return False
+    offer: UnsentOfferRow = raw_offer  # type: ignore[assignment]
 
     product_id = offer["product_id"]
     scored_offer_id = offer["scored_offer_id"]

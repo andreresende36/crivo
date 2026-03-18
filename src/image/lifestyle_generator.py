@@ -4,8 +4,9 @@ Pipeline de 2 passos para transformar thumbnail de produto em imagem lifestyle.
 Tudo via OpenRouter.
 
 Passo 1: Claude Haiku 4.5 analisa a imagem e gera um prompt otimizado
-Passo 2: Gemini 2.5 Flash Image gera a imagem lifestyle
+Passo 2: Modelo de imagem configurável gera a imagem lifestyle
 
+O modelo do Passo 2 é configurável via LIFESTYLE_IMAGE_MODEL no .env.
 Ambos os passos são síncronos (httpx) — o wrapper async roda em executor.
 """
 
@@ -34,46 +35,148 @@ OPENROUTER_HEADERS_BASE = {
 }
 
 HAIKU_MODEL = "anthropic/claude-haiku-4-5"
-GEMINI_MODEL = "google/gemini-2.5-flash-image"
+
+# ---------------------------------------------------------------------------
+# Modelos de geração de imagem disponíveis no OpenRouter
+# Chave = alias amigável (usado no .env), valor = model ID do OpenRouter
+# ---------------------------------------------------------------------------
+LIFESTYLE_IMAGE_MODELS: dict[str, str] = {
+    "flux-flex": "black-forest-labs/flux.2-flex",  # FLUX.2 Flex
+    "flux-klein": "black-forest-labs/flux.2-klein-4b",  # FLUX.2 Klein 4B
+    "flux-max": "black-forest-labs/flux.2-max",  # FLUX.2 Max
+    "flux-pro": "black-forest-labs/flux.2-pro",  # FLUX.2 Pro
+    "gpt5-image": "openai/gpt-5-image",  # GPT-5 Image
+    "gpt5-image-mini": "openai/gpt-5-image-mini",  # GPT-5 Image Mini
+    "nano-banana": (
+        "google/gemini-2.5-flash-image"  # Gemini 2.5 Flash Image Preview
+    ),
+    "nano-banana-2": "google/gemini-3.1-flash-image-preview",  # Nano Banana 2 (Gemini 3.1)
+    "nano-banana-pro": (
+        "google/gemini-3-pro-image-preview"  # Nano Banana Pro (Gemini 3 Pro)
+    ),
+    "riverflow-fast": "sourceful/riverflow-v2-fast",  # Riverflow V2 Fast
+    "riverflow-fast-preview": "sourceful/riverflow-v2-fast-preview",  # Riverflow V2 Fast Preview
+    "riverflow-max-preview": "sourceful/riverflow-v2-max-preview",  # Riverflow V2 Max Preview
+    "riverflow-pro": "sourceful/riverflow-v2-pro",  # Riverflow V2 Pro
+    "riverflow-fast-preview": (
+        "sourceful/riverflow-v2-fast-preview"  # Riverflow V2 Fast Preview
+    ),
+    "riverflow-std-preview": (
+        "sourceful/riverflow-v2-standard-preview"  # Riverflow V2 Standard Preview
+    ),
+    "seedream": "bytedance-seed/seedream-4.5",  # Seedream 4.5
+}
+
+
+def _resolve_image_model() -> str:
+    """Resolve o alias do .env para o model ID do OpenRouter."""
+    alias = settings.openrouter.lifestyle_image_model.strip().lower()
+    # Aceita tanto o alias amigável quanto o model ID direto
+    if alias in LIFESTYLE_IMAGE_MODELS:
+        model_id = LIFESTYLE_IMAGE_MODELS[alias]
+    elif alias in LIFESTYLE_IMAGE_MODELS.values():
+        model_id = alias
+    else:
+        valid = ", ".join(sorted(LIFESTYLE_IMAGE_MODELS.keys()))
+        raise ValueError(
+            f"Modelo de imagem '{alias}' não reconhecido. " f"Opções válidas: {valid}"
+        )
+    logger.info("lifestyle_image_model_resolved", alias=alias, model_id=model_id)
+    return model_id
+
 
 ANALYSIS_SYSTEM_PROMPT = """\
 Você é um especialista em fotografia de produto e marketing visual para e-commerce \
 brasileiro. Sua tarefa é analisar uma foto de produto e gerar um prompt de geração \
 de imagem otimizado para o Gemini 2.5 Flash Image (Nano Banana).
 
+OBJETIVO PRINCIPAL:
+Gerar uma imagem de LIFESTYLE REAL onde o produto aparece SENDO USADO no dia a dia, \
+mas continua sendo o ELEMENTO MAIS VISÍVEL e dominante da foto. A cena mostra uso \
+real e cotidiano — o produto está em ação — mas a composição, iluminação e foco \
+garantem que ele SALTA AOS OLHOS do espectador.
+
 PROCESSO:
-1. Identifique o produto: tipo, marca (se visível), cor, materiais, detalhes
+1. Identifique o produto: tipo, marca (se visível), cor, materiais, detalhes visuais únicos
 2. Determine a categoria: calçado, eletrônico, roupa, acessório, brinquedo, \
    utensílio doméstico, etc.
-3. Escolha o cenário ideal de uso real para esse produto
+3. Imagine um MOMENTO REAL DE USO no dia a dia de uma pessoa comum brasileira
 4. Gere o prompt em inglês otimizado para geração de imagem
+
+FILOSOFIA: USO REAL + PRODUTO EM DESTAQUE
+- A pessoa está USANDO o produto de forma natural e cotidiana
+- O enquadramento é pensado para que o produto ocupe a maior parte do frame
+- O corpo/rosto da pessoa é CONTEXTO, o produto é o SUJEITO
+- Exemplo: para um tênis, não mostre a pessoa inteira — mostre do joelho pra \
+  baixo caminhando, com o tênis nítido e o chão desfocado
+- Exemplo: para fones de ouvido, mostre pescoço/orelha com o fone em destaque, \
+  café e laptop borrados ao fundo
+- Exemplo: para panela, mostre mãos cozinhando com a panela centralizada e nítida
+
+REGRAS CRÍTICAS DE DESTAQUE DO PRODUTO:
+- O produto DEVE ocupar 40-60% da área visível da imagem
+- O produto DEVE ter a NITIDEZ MÁXIMA da cena (sharpest point of focus)
+- Use enquadramento PARCIAL da pessoa: mostre apenas a parte do corpo que \
+  interage com o produto (mãos, pés, pulso, ombro, orelha)
+- O fundo e partes da pessoa que não interagem com o produto ficam em \
+  soft focus (f/1.8 – f/2.8)
+- Iluminação principal deve cair SOBRE O PRODUTO, não sobre o rosto da pessoa
+- Cores do ambiente devem complementar o produto, nunca competir
 
 REGRAS PARA O PROMPT:
 - Escreva SEMPRE em inglês (melhor resultado no Gemini)
-- Use linguagem descritiva de fotografia: mencione lente, iluminação, composição
-- Descreva a cena de uso real com detalhes sensoriais (textura, luz, ambiente)
-- Inclua "this exact product" para referenciar a imagem de entrada
-- Use frases positivas (descreva o que QUER, não o que não quer)
-- Especifique estilo fotográfico: editorial lifestyle, natural light photography
-- Inclua detalhes de iluminação: golden hour, soft natural light, warm ambient
-- Mencione profundidade de campo: shallow depth of field, f/2.8, bokeh
-- Especifique que a imagem deve parecer uma foto real (não render 3D)
+- COMECE descrevendo o produto em detalhe: "this exact product" + cor, forma, \
+  textura, detalhes visíveis
+- SEGUNDO: descreva a AÇÃO de uso ("being worn while walking", "held in hand \
+  while cooking", "resting on a wrist during a coffee break")
+- TERCEIRO: descreva o enquadramento parcial do corpo ("shot from the knees \
+  down", "close-up on hands and the product", "over-the-shoulder framing")
+- QUARTO: descreva o cenário de fundo como contexto desfocado
+- Inclua OBRIGATORIAMENTE: "product is the hero of the image, tack-sharp and prominent"
+- Inclua OBRIGATORIAMENTE: "shallow depth of field, background and non-essential \
+  areas softly blurred"
+- Mencione estilo: "editorial lifestyle product photography" ou \
+  "commercial in-use product photography"
+- Especifique iluminação natural e realista: golden hour, soft window light, \
+  warm natural light
+- Especifique abertura ampla (f/1.8 ou f/2.8) e lente adequada (35mm, 50mm, 85mm)
+- Use frases como: "product in action", "real everyday use", "authentic moment"
+- A imagem deve parecer uma foto real de campanha editorial, não render 3D
+- NÃO use frases negativas
 
-CENÁRIOS POR CATEGORIA (adapte criativamente):
-- Calçado → pessoa caminhando em rua urbana, calçadão, parque
-- Eletrônico → mesa de trabalho organizada, sala moderna, uso casual
-- Roupa → pessoa usando em ambiente urbano, café, rua movimentada
-- Acessório → close-up em uso, complementando um look
-- Brinquedo → criança brincando em sala iluminada, parque, jardim
-- Utensílio doméstico → cozinha moderna, bancada organizada
-- Mochila/bolsa → pessoa em campus, trilha, viagem
-- Produto de beleza → bancada de banheiro elegante, penteadeira
+ESTRUTURA OBRIGATÓRIA DO PROMPT GERADO (nesta ordem):
+1. PRODUTO: "this exact product" + descrição visual detalhada
+2. AÇÃO: o que a pessoa está fazendo com o produto neste momento
+3. ENQUADRAMENTO: que parte do corpo aparece e como o produto é emoldurado
+4. CENA: ambiente cotidiano ao redor (desfocado, contextual)
+5. ILUMINAÇÃO: luz natural que favorece o produto
+6. TÉCNICA: lente, abertura, profundidade de campo, estilo fotográfico
+
+CENÁRIOS DE USO REAL POR CATEGORIA (adapte criativamente):
+- Calçado → pés caminhando em calçadão/rua, subindo escada, pedalando — \
+  enquadramento do joelho pra baixo, tênis nítido, chão e fundo em bokeh
+- Eletrônico → mãos usando o produto sobre mesa de trabalho/sofá — \
+  close nas mãos e no dispositivo, rosto e ambiente borrados
+- Roupa → pessoa vestindo a peça em movimento (andando, sentando em café, \
+  ajeitando a manga) — enquadramento do torso ou corpo focado na peça
+- Acessório (relógio/pulseira) → pulso em ação (segurando café, digitando, \
+  apoiado em mesa) — extreme close no pulso, tudo ao redor em soft focus
+- Brinquedo → mãos de criança segurando/brincando com o produto — \
+  close nas mãos e brinquedo, rosto da criança suavemente desfocado
+- Utensílio doméstico → mãos cozinhando/servindo com o produto — \
+  produto centralizado na bancada, vapor, ingredientes borrados ao fundo
+- Mochila/bolsa → ombro/costas com a mochila em destaque, pessoa caminhando \
+  em campus/rua — enquadramento da cintura pra cima, fundo urbano em bokeh
+- Produto de beleza → mãos aplicando/segurando o produto próximo ao rosto — \
+  close no produto e mãos, rosto parcial e fundo desfocados
+- Garrafa/copo → mão segurando durante atividade (treino, trabalho, passeio) — \
+  close na mão e produto, contexto da atividade borrado
 
 RESPONDA APENAS com um JSON válido (sem markdown, sem backticks):
 {
   "product_name": "nome descritivo do produto",
   "category": "categoria identificada",
-  "scene_description": "descrição breve da cena escolhida em português",
+  "scene_description": "descrição breve da cena de uso escolhida em português",
   "generation_prompt": "prompt completo em inglês para gerar a imagem"
 }
 """
@@ -124,7 +227,9 @@ def _step1_analyze_product(image_b64: str, media_type: str) -> dict:
             },
         )
         if not resp.is_success:
-            logger.error("haiku_api_error", status=resp.status_code, body=resp.text[:400])
+            logger.error(
+                "haiku_api_error", status=resp.status_code, body=resp.text[:400]
+            )
         resp.raise_for_status()
 
     data = resp.json()
@@ -158,21 +263,26 @@ def _step1_analyze_product(image_b64: str, media_type: str) -> dict:
 # ---------------------------------------------------------------------------
 # Passo 2 — Geração com Gemini via OpenRouter
 # ---------------------------------------------------------------------------
-def _step2_generate_image(prompt: str, image_b64: str, media_type: str) -> bytes:
+def _step2_generate_image(
+    prompt: str, image_b64: str, media_type: str, model_id: str | None = None
+) -> bytes:
     """
-    Gera imagem lifestyle via Gemini 2.5 Flash Image no OpenRouter.
+    Gera imagem lifestyle via modelo configurado no OpenRouter.
     Retorna JPEG bytes.
     """
     api_key = settings.openrouter.api_key
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY não configurada")
 
+    if model_id is None:
+        model_id = _resolve_image_model()
+
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(
             OPENROUTER_URL,
             headers=_get_headers(),
             json={
-                "model": GEMINI_MODEL,
+                "model": model_id,
                 "messages": [
                     {
                         "role": "user",
@@ -193,7 +303,9 @@ def _step2_generate_image(prompt: str, image_b64: str, media_type: str) -> bytes
             },
         )
         if not resp.is_success:
-            logger.error("gemini_api_error", status=resp.status_code, body=resp.text[:400])
+            logger.error(
+                "gemini_api_error", status=resp.status_code, body=resp.text[:400]
+            )
         resp.raise_for_status()
 
     data = resp.json()
@@ -208,7 +320,11 @@ def _step2_generate_image(prompt: str, image_b64: str, media_type: str) -> bytes
     images = message.get("images")
     if isinstance(images, list) and images:
         img_entry = images[0]
-        url = img_entry.get("image_url", {}).get("url", "") if isinstance(img_entry, dict) else ""
+        url = (
+            img_entry.get("image_url", {}).get("url", "")
+            if isinstance(img_entry, dict)
+            else ""
+        )
         if url.startswith("data:"):
             b64_data = url.split(",", 1)[1]
             image_bytes = base64.b64decode(b64_data)
@@ -272,9 +388,10 @@ def _ensure_jpeg(image_bytes: bytes) -> bytes:
 # ---------------------------------------------------------------------------
 def _sync_generate(image_b64: str, media_type: str) -> bytes:
     """Pipeline completo síncrono: análise → geração. Retorna JPEG bytes."""
+    model_id = _resolve_image_model()
     analysis = _step1_analyze_product(image_b64, media_type)
     prompt = analysis["generation_prompt"]
-    return _step2_generate_image(prompt, image_b64, media_type)
+    return _step2_generate_image(prompt, image_b64, media_type, model_id=model_id)
 
 
 # ---------------------------------------------------------------------------

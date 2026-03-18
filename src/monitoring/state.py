@@ -16,7 +16,7 @@ class MonitorState:
 
     # Status
     is_sending_hours: bool = False
-    
+
     @classmethod
     def get_state(cls) -> dict:
         """Retorna o estado serializável para a API."""
@@ -26,6 +26,7 @@ class MonitorState:
             "is_sending_hours": cls.is_sending_hours,
             "server_time": datetime.now().isoformat(),
         }
+
 
 # Instância singleton exportada
 state = MonitorState()

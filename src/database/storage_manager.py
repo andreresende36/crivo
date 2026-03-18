@@ -249,7 +249,10 @@ class StorageManager:
             try:
                 # Supabase primeiro: gera o UUID canônico
                 remote_id = await self._supabase.upsert_product(
-                    product, badge_id=badge_id, category_id=category_id, marketplace_id=marketplace_id
+                    product,
+                    badge_id=badge_id,
+                    category_id=category_id,
+                    marketplace_id=marketplace_id,
                 )
                 # SQLite usa o mesmo UUID para manter FKs consistentes
                 await self._sqlite.upsert_product(
@@ -259,7 +262,7 @@ class StorageManager:
                     category_id=category_id,
                     marketplace_id=marketplace_id,
                 )
-                return remote_id
+                return remote_id or ""
             except SupabaseError as exc:
                 logger.warning(
                     "supabase_write_failed_using_local_id",
@@ -268,9 +271,13 @@ class StorageManager:
                 )
 
         # Supabase indisponível: SQLite gera seu próprio UUID
-        return await self._sqlite.upsert_product(
-            product, badge_id=badge_id, category_id=category_id, marketplace_id=marketplace_id
+        result = await self._sqlite.upsert_product(
+            product,
+            badge_id=badge_id,
+            category_id=category_id,
+            marketplace_id=marketplace_id,
         )
+        return result or ""
 
     async def check_duplicate(self, ml_id: str) -> bool:
         """Verifica se um produto já existe (consulta o backend ativo, fallback no outro)."""

@@ -7,6 +7,7 @@ O envio ao Telegram é feito pelo sender_loop em runner.py.
 """
 
 import time
+from typing import Any
 
 import structlog
 
@@ -34,7 +35,7 @@ async def run_pipeline(storage: StorageManager) -> dict:
 
     Retorna dict com estatísticas da execução.
     """
-    stats = {
+    stats: dict[str, Any] = {
         "scraped": 0,
         "new": 0,
         "scored": 0,

@@ -16,7 +16,7 @@ import re
 
 import structlog
 
-from src.config import settings
+
 from src.database.storage_manager import StorageManager
 from src.distributor.ml_affiliate_api import MLAffiliateAPI
 

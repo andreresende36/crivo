@@ -13,7 +13,7 @@ Uso:
 
 from __future__ import annotations
 
-import json
+
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -112,7 +112,7 @@ class MLAffiliateAPI:
         # A API aceita batch, mas limitamos a 10 por chamada por seguranca
         batch_size = 10
         for i in range(0, len(product_urls), batch_size):
-            batch = product_urls[i : i + batch_size]
+            batch = product_urls[i:i + batch_size]
             batch_result = await self._call_create_link_batch(batch)
             results.update(batch_result)
 
@@ -214,7 +214,7 @@ class MLAffiliateAPI:
                 )
                 origin = item.get("origin_url", "")
                 # Mapeia de volta para a URL original (tracking)
-                original_url = clean_to_original.get(origin, origin)
+                original_url: str = clean_to_original.get(origin, origin) or origin
                 results[original_url] = link
 
             logger.info(

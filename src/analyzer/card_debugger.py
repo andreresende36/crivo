@@ -253,7 +253,8 @@ def _crop_info_section(img_bytes: bytes) -> bytes:
             colored = sum(
                 1
                 for x in range(x0, x1, step)
-                if min(img.getpixel((x, y))[:3]) < 200  # qualquer canal escuro
+                if isinstance((px := img.getpixel((x, y))), tuple)
+                and min(px[:3]) < 200
             )
             if colored / n > 0.05:  # > 5 % → linha com conteúdo
                 crop_top = max(0, y - 8)  # 8 px de margem acima
@@ -287,7 +288,11 @@ def _build_cards(
             b64 = base64.b64encode(cropped).decode()
             img_html = f'<img src="data:image/png;base64,{b64}" alt="card {p.ml_id}">'
         else:
-            img_html = '<div class="no-img" style="padding:40px 0;color:#aaa;font-size:12px">screenshot não disponível</div>'
+            img_html = (
+                '<div class="no-img" style="padding:40px 0;'
+                'color:#aaa;font-size:12px">'
+                'screenshot não disponível</div>'
+            )
 
         # --- Badge pill ---
         if p.badge:
@@ -350,6 +355,15 @@ def _build_cards(
             ensure_ascii=False,
         )
 
+        max_total = (
+            s.breakdown.discount.max_points
+            + s.breakdown.badge.max_points
+            + s.breakdown.rating.max_points
+            + s.breakdown.reviews.max_points
+            + s.breakdown.free_shipping.max_points
+            + s.breakdown.installments.max_points
+            + s.breakdown.title_quality.max_points
+        )
         html_parts.append(
             f"""
   <div class="card">
@@ -362,7 +376,7 @@ def _build_cards(
       {badge_html}
       <div class="score-line">
         <span class="score-val">{s.score:.1f}</span>
-        <span class="score-min">/ {s.breakdown.discount.max_points + s.breakdown.badge.max_points + s.breakdown.rating.max_points + s.breakdown.reviews.max_points + s.breakdown.free_shipping.max_points + s.breakdown.installments.max_points + s.breakdown.title_quality.max_points:.0f} pts</span>
+        <span class="score-min">/ {max_total:.0f} pts</span>
       </div>
       <div class="reason">{reason}</div>
       <table class="breakdown">{rows}</table>

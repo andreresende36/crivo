@@ -283,15 +283,27 @@ class SQLiteFallback:
 
         CREATE VIEW IF NOT EXISTS vw_last_24h_summary AS
         SELECT
-            (SELECT COUNT(*) FROM products      WHERE last_seen_at >= datetime('now', '-24 hours')) AS products_scraped,
-            (SELECT COUNT(*) FROM scored_offers WHERE scored_at   >= datetime('now', '-24 hours')) AS offers_scored,
-            (SELECT COUNT(*) FROM scored_offers WHERE scored_at   >= datetime('now', '-24 hours')
-                                                 AND status = 'approved')                          AS offers_approved,
-            (SELECT COUNT(*) FROM sent_offers   WHERE sent_at     >= datetime('now', '-24 hours')) AS offers_sent,
+            (SELECT COUNT(*) FROM products
+             WHERE last_seen_at >= datetime('now', '-24 hours')
+            ) AS products_scraped,
+            (SELECT COUNT(*) FROM scored_offers
+             WHERE scored_at >= datetime('now', '-24 hours')
+            ) AS offers_scored,
+            (SELECT COUNT(*) FROM scored_offers
+             WHERE scored_at >= datetime('now', '-24 hours')
+               AND status = 'approved'
+            ) AS offers_approved,
+            (SELECT COUNT(*) FROM sent_offers
+             WHERE sent_at >= datetime('now', '-24 hours')
+            ) AS offers_sent,
             (SELECT ROUND(AVG(final_score), 1)
-               FROM scored_offers WHERE scored_at >= datetime('now', '-24 hours'))                 AS avg_score,
+             FROM scored_offers
+             WHERE scored_at >= datetime('now', '-24 hours')
+            ) AS avg_score,
             (SELECT MAX(discount_percent)
-               FROM products WHERE last_seen_at  >= datetime('now', '-24 hours'))                  AS max_discount_pct;
+             FROM products
+             WHERE last_seen_at >= datetime('now', '-24 hours')
+            ) AS max_discount_pct;
 
         CREATE VIEW IF NOT EXISTS vw_top_deals AS
         SELECT
@@ -354,7 +366,8 @@ class SQLiteFallback:
         # Índice único em users.email (criado após migration que adiciona a coluna)
         try:
             await self._db.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_u_email ON users(email) WHERE email IS NOT NULL"
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "idx_u_email ON users(email) WHERE email IS NOT NULL"
             )
             await self._db.commit()
         except Exception:
@@ -1542,7 +1555,7 @@ class SQLiteFallback:
 
             # Envio em chunks (batch upsert)
             for i in range(0, len(all_data), chunk_size):
-                chunk = all_data[i : i + chunk_size]
+                chunk = all_data[i:i + chunk_size]
                 chunk_rows = [data for _, data in chunk]
                 chunk_ids = [row_id for row_id, _ in chunk]
                 try:
@@ -1670,7 +1683,7 @@ class SQLiteFallback:
                 all_data.append((row_id, data))
 
             for i in range(0, len(all_data), chunk_size):
-                chunk = all_data[i : i + chunk_size]
+                chunk = all_data[i:i + chunk_size]
                 chunk_rows = [data for _, data in chunk]
                 chunk_ids = [row_id for row_id, _ in chunk]
                 try:
@@ -1737,7 +1750,8 @@ class SQLiteFallback:
         """Retorna o user completo pela tag."""
         try:
             cursor = await self._db.execute(
-                "SELECT id, name, affiliate_tag, ml_cookies, created_at FROM users WHERE affiliate_tag = ?",
+                "SELECT id, name, affiliate_tag, ml_cookies, created_at "
+                "FROM users WHERE affiliate_tag = ?",
                 (affiliate_tag,),
             )
             row = await cursor.fetchone()
@@ -1817,7 +1831,8 @@ class SQLiteFallback:
         try:
             placeholders = ",".join("?" for _ in product_ids)
             cursor = await self._db.execute(
-                f"SELECT product_id FROM affiliate_links WHERE user_id = ? AND product_id IN ({placeholders})",  # noqa: S608
+                f"SELECT product_id FROM affiliate_links "
+                f"WHERE user_id = ? AND product_id IN ({placeholders})",  # noqa: S608
                 [user_id, *product_ids],
             )
             rows = await cursor.fetchall()
@@ -1918,7 +1933,8 @@ class SQLiteFallback:
         """Retorna a URL da imagem aprimorada, se existir."""
         try:
             cursor = await self._db.execute(
-                "SELECT enhanced_image_url FROM products WHERE id = ? AND image_status = 'enhanced'",
+                "SELECT enhanced_image_url FROM products "
+                "WHERE id = ? AND image_status = 'enhanced'",
                 (product_id,),
             )
             row = await cursor.fetchone()

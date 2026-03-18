@@ -149,9 +149,10 @@ class TelegramBot:
 
     async def _send_photo(self, group_id: str, message: FormattedMessage):
         """Envia mensagem com imagem do produto."""
+        photo = message.image_url or ""
         return await self.bot.send_photo(
             chat_id=group_id,
-            photo=message.image_url,
+            photo=photo,
             caption=message.telegram_text,
             parse_mode=ParseMode.MARKDOWN_V2,
         )

@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -795,4 +794,3 @@ class MLScraper(BaseScraper):
             return int(text)
         except (ValueError, TypeError):
             return 0
-

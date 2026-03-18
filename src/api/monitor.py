@@ -11,16 +11,17 @@ import structlog
 
 from src.monitoring.state import MonitorState
 from src.database.storage_manager import StorageManager
-from src.config import settings
 
 logger = structlog.get_logger(__name__)
 
 app = FastAPI(title="DealHunter Monitor")
 
+
 @app.get("/api/state")
 async def get_state():
     """Retorna os timers de envio e scraping em tempo real."""
     return MonitorState.get_state()
+
 
 @app.get("/api/queue")
 async def get_queue():
@@ -31,7 +32,6 @@ async def get_queue():
             offers = await storage._supabase.get_pending_scored_offers(limit=50)
         else:
             offers = await storage._sqlite.get_pending_scored_offers(limit=50)
-            
         return {"queue": offers}
 
 
@@ -40,9 +40,8 @@ WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
 
 if os.path.exists(WEB_DIR):
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
-    
+
     # Endpoint redirect for convenience
     @app.get("/")
     async def index():
         return RedirectResponse(url="/index.html")
-

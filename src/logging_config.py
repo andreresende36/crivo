@@ -322,14 +322,20 @@ def _render_product_rejected(ts: str, kv: dict) -> str:
             ("badge",        "Badge           "),
             ("rating",       "Avaliação       "),
             ("reviews",      "Reviews         "),
-            ("free_shipping","Frete grátis    "),
+            ("free_shipping", "Frete grátis    "),
             ("installments", "Sem juros       "),
             ("title",        "Título          "),
         ]
         lines.append(f"   {_C.DIM}▸ Breakdown:{_C.RESET}")
         for key, label in _BD_LABELS:
             val = breakdown.get(key, 0)
-            bar_filled = int(val / 30 * 10) if key == "discount" else int(val / 15 * 10) if key in ("badge", "rating") else int(val / 10 * 10)
+            bar_filled = (
+                int(val / 30 * 10)
+                if key == "discount"
+                else int(val / 15 * 10)
+                if key in ("badge", "rating")
+                else int(val / 10 * 10)
+            )
             bar = f"{'█' * bar_filled}{'░' * (10 - bar_filled)}"
             color = _C.B_GREEN if val > 0 else _C.DIM
             lines.append(

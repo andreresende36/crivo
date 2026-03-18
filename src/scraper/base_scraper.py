@@ -224,7 +224,7 @@ class BaseScraper(ABC):
     async def _new_context(self) -> None:
         """Cria um novo contexto de browser com UA e headers aleatórios."""
         user_agent = self._pick_user_agent()
-        viewport = random.choice(
+        vp: dict[str, int] = random.choice(
             [
                 {"width": 1920, "height": 1080},
                 {"width": 1440, "height": 900},
@@ -233,9 +233,11 @@ class BaseScraper(ABC):
             ]
         )
 
+        if self._browser is None:
+            raise RuntimeError("Browser not started")
         self._context = await self._browser.new_context(
             user_agent=user_agent,
-            viewport=viewport,
+            viewport={"width": vp["width"], "height": vp["height"]},
             locale="pt-BR",
             timezone_id="America/Sao_Paulo",
             extra_http_headers=BASE_HEADERS,
@@ -312,7 +314,8 @@ class BaseScraper(ABC):
         """Recria o contexto do browser a cada N requisições para limpar cookies."""
         if self._request_count > 0 and self._request_count % every_n_requests == 0:
             logger.info("rotating_context", request_count=self._request_count)
-            await self._context.close()
+            if self._context is not None:
+                await self._context.close()
             await self._new_context()
 
     # ------------------------------------------------------------------
@@ -466,6 +469,8 @@ class BaseScraper(ABC):
 
     async def _new_page(self) -> Page:
         """Cria uma nova aba no contexto atual."""
+        if self._context is None:
+            raise RuntimeError("Browser context not created")
         page = await self._context.new_page()
         page.set_default_timeout(self.cfg.page_timeout)
         return page

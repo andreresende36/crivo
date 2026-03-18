@@ -218,7 +218,12 @@ class SupabaseClient:
 
         Retorna o UUID (id) do produto no banco, ou None em caso de erro.
         """
-        data = self._product_to_row(product, badge_id=badge_id, category_id=category_id, marketplace_id=marketplace_id)
+        data = self._product_to_row(
+            product,
+            badge_id=badge_id,
+            category_id=category_id,
+            marketplace_id=marketplace_id,
+        )
         try:
             result = (
                 await self._db.table("products")
@@ -495,7 +500,11 @@ class SupabaseClient:
             }
         rows = list(deduped.values())
         try:
-            result = await self._db.table("scored_offers").upsert(rows, on_conflict="product_id").execute()
+            result = (
+                await self._db.table("scored_offers")
+                .upsert(rows, on_conflict="product_id")
+                .execute()
+            )
             if not result.data:
                 raise SupabaseError(
                     "batch insert retornou sem dados",

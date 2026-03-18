@@ -64,7 +64,7 @@ TELEGRAM_TEMPLATE_PIX = """{discount_emoji} *{title}*
 
 {hashtags}
 
-🛒 [Comprar agora\!]({link})
+🛒 [Comprar agora\\!]({link})
 ━━━━━━━━━━━━━━━
 _Sempre Black — Todo dia é Black Friday_ 🖤"""
 
@@ -78,7 +78,7 @@ TELEGRAM_TEMPLATE = """{discount_emoji} *{title}*
 
 {hashtags}
 
-🛒 [Comprar agora\!]({link})
+🛒 [Comprar agora\\!]({link})
 ━━━━━━━━━━━━━━━
 _Sempre Black — Todo dia é Black Friday_ 🖤"""
 
@@ -120,7 +120,7 @@ TELEGRAM_TEMPLATE_NO_ORIGINAL = """{discount_emoji} *{title}*
 
 {hashtags}
 
-🛒 [Comprar agora\!]({link})
+🛒 [Comprar agora\\!]({link})
 ━━━━━━━━━━━━━━━
 _Sempre Black — Todo dia é Black Friday_ 🖤"""
 
