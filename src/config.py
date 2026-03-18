@@ -215,6 +215,10 @@ class ScoreConfig:
 @dataclass
 class OpenRouterConfig:
     api_key: str = field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
+    # Modelo de geração de imagem lifestyle (ver LIFESTYLE_IMAGE_MODELS em lifestyle_generator.py)
+    lifestyle_image_model: str = field(
+        default_factory=lambda: os.getenv("LIFESTYLE_IMAGE_MODEL", "nano-banana")
+    )
 
 
 # ---------------------------------------------------------------------------
