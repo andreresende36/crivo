@@ -34,7 +34,20 @@
       "Read(//Users/andreresende/.asdf/installs/python/3.11.14/lib/python3.11/site-packages/storage3/_async/**)",
       "Read(//Users/andreresende/.asdf/installs/python/3.11.14/lib/python3.11/site-packages/**)",
       "Bash(python /tmp/verify_price_fix.py)",
-      "Bash(ls -la /Users/andreresende/Apps/dealhunter/data/*.db)"
+      "Bash(ls -la /Users/andreresende/Apps/dealhunter/data/*.db)",
+      "Bash(find /Users/andreresende/Apps/dealhunter/src -type f -name *.py)",
+      "Bash(python -c \"from src.distributor.message_formatter import MessageFormatter, FormattedMessage; print\\(''OK''\\)\")",
+      "Bash(python -c \"from src.image.product_image_selector import select_best_image, ImageResult; print\\(''OK''\\)\")",
+      "Bash(python -c \"from src.sender import send_next_offer; print\\(''OK''\\)\")",
+      "Bash(python -c \"from src.distributor.title_generator import generate_catchy_title; print\\(''OK''\\)\")",
+      "Bash(python -c \"from src.runner import calculate_send_interval, is_sending_hours; print\\(''interval:'', calculate_send_interval\\(\\), ''min''\\); print\\(''OK''\\)\")",
+      "Bash(flake8 src/distributor/message_formatter.py src/distributor/title_generator.py src/distributor/message_validator.py src/image/product_image_selector.py src/sender.py src/runner.py src/config.py)",
+      "Bash(python -m flake8 src/distributor/message_formatter.py src/distributor/title_generator.py src/distributor/message_validator.py src/image/product_image_selector.py src/sender.py src/runner.py src/config.py)",
+      "Bash(python -m pytest tests/test_formatters.py -v)",
+      "Bash(python -m pytest tests/test_integration.py -v -k \"test_good_product or test_format\")",
+      "Bash(python -m flake8 src/distributor/ src/image/product_image_selector.py src/sender.py src/runner.py src/config.py tests/test_formatters.py)",
+      "Bash(python -m flake8 src/distributor/title_generator.py)",
+      "Bash(git push:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
