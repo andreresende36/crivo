@@ -24,7 +24,6 @@ from src.scraper.base_scraper import ScrapedProduct
 from src.distributor.affiliate_links import AffiliateLinkBuilder
 from src.distributor.message_formatter import MessageFormatter
 from src.distributor.telegram_bot import TelegramBot
-from src.image.product_image_selector import select_best_image
 from src.image.image_storage import upload_to_supabase
 
 if TYPE_CHECKING:
@@ -96,54 +95,44 @@ async def _select_and_upload_image(
     product_title: str,
     thumbnail_url: str,
     category: str,
-) -> str | None:
+    product_url: str = "",
+    force_new: bool = False,
+) -> tuple[str | None, bytes | None]:
     """
-    Seleciona a melhor imagem real do produto e faz upload para Supabase Storage.
+    Gera imagem lifestyle via IA e faz upload para Supabase Storage.
     Reutiliza imagem existente se já houver uma selecionada para este produto.
-    Retorna a URL pública da imagem ou None.
+
+    Args:
+        force_new: Pula cache de imagem existente (usado no retry de validação).
+
+    Returns:
+        Tupla (URL pública, bytes da imagem) ou (None, None).
     """
     # Reutiliza imagem já processada — evita custo duplicado
-    existing_url = await storage.get_enhanced_image_url(product_id)
-    if existing_url:
-        logger.info("image_reusing_existing", ml_id=ml_id, url=existing_url[:80])
-        return existing_url
+    if not force_new:
+        existing_url = await storage.get_enhanced_image_url(product_id)
+        if existing_url:
+            logger.info("image_reusing_existing", ml_id=ml_id, url=existing_url[:80])
+            return existing_url, None
 
-    image_method = settings.sender.image_method
+    from src.image.lifestyle_generator import generate_lifestyle_image
+
     image_bytes: bytes | None = None
-    source = "unknown"
-
-    if image_method == "lifestyle":
-        # Geração de imagem lifestyle via IA (Haiku + modelo de imagem)
-        from src.image.lifestyle_generator import generate_lifestyle_image
-
-        max_retries = settings.sender.image_max_retries
-        for attempt in range(1, max_retries + 1):
-            image_bytes = await generate_lifestyle_image(thumbnail_url)
-            if image_bytes:
-                source = "lifestyle"
-                break
-            logger.warning(
-                "lifestyle_retry",
-                ml_id=ml_id,
-                attempt=attempt,
-                max_retries=max_retries,
-            )
-    else:
-        # Pipeline de 3 camadas: marca → ML API → thumbnail
-        result = await select_best_image(
+    max_retries = settings.sender.image_max_retries
+    for attempt in range(1, max_retries + 1):
+        image_bytes = await generate_lifestyle_image(thumbnail_url)
+        if image_bytes:
+            break
+        logger.warning(
+            "lifestyle_retry",
             ml_id=ml_id,
-            product_title=product_title,
-            thumbnail_url=thumbnail_url,
-            category=category,
+            attempt=attempt,
+            max_retries=max_retries,
         )
-        image_bytes = result.image_bytes
-        source = result.source
 
     if not image_bytes:
-        logger.warning("image_selection_no_bytes", ml_id=ml_id, source=source)
-        if image_method != "lifestyle":
-            return result.url if result.url else None  # type: ignore[possibly-undefined]
-        return None
+        logger.warning("image_selection_no_bytes", ml_id=ml_id)
+        return None, None
 
     # Upload para Supabase Storage
     public_url = await upload_to_supabase(product_id, image_bytes, "jpg")
@@ -151,17 +140,11 @@ async def _select_and_upload_image(
         await storage.update_image_status(
             product_id, "enhanced", enhanced_url=public_url
         )
-        logger.info(
-            "image_uploaded",
-            ml_id=ml_id,
-            source=source,
-            method=image_method,
-            url=public_url[:80],
-        )
-        return public_url
+        logger.info("image_uploaded", ml_id=ml_id, source="lifestyle", url=public_url[:80])
+        return public_url, image_bytes
 
     logger.warning("image_upload_failed", ml_id=ml_id)
-    return None
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -204,34 +187,7 @@ async def send_next_offer(
         score=offer["final_score"],
     )
 
-    # 1. Gerar título catchy via IA (se disponível)
-    catchy_title: str | None = None
-    if settings.openrouter.api_key:
-        try:
-            from src.distributor.title_generator import generate_catchy_title
-            catchy_title = await generate_catchy_title(
-                product_title=product_title,
-                category=category,
-                price=float(offer["current_price"]),
-                original_price=(
-                    float(offer["original_price"])
-                    if offer.get("original_price") else None
-                ),
-            )
-        except Exception as exc:
-            logger.warning("title_generation_failed", ml_id=ml_id, error=str(exc))
-
-    # 2. Selecionar melhor imagem real do produto
-    enhanced_image_url: str | None = None
-    if thumbnail_url:
-        enhanced_image_url = await _select_and_upload_image(
-            storage, product_id, ml_id, product_title, thumbnail_url, category
-        )
-
-    if not enhanced_image_url:
-        logger.info("sending_with_original_thumbnail", ml_id=ml_id)
-
-    # 3. Link de afiliado
+    # 1. Link de afiliado (não muda entre tentativas)
     short_url = offer["product_url"]
     try:
         ml_cfg = settings.mercado_livre
@@ -250,27 +206,102 @@ async def send_next_offer(
     except Exception as exc:
         logger.warning("affiliate_link_failed", ml_id=ml_id, error=str(exc))
 
-    # 4. Formatar mensagem (Style Guide v3)
     product = _offer_to_product(offer)
     formatter = MessageFormatter()
-    msg = formatter.format(
-        product,
-        short_link=short_url,
-        catchy_title=catchy_title,
-        enhanced_image_url=enhanced_image_url,
-    )
 
-    # 5. Validar mensagem (soft — loga mas não bloqueia)
-    from src.distributor.message_validator import validate_message
-    validate_message(
-        whatsapp_text=msg.whatsapp_text,
-        free_shipping=product.free_shipping,
-        rating=product.rating,
-        review_count=product.review_count,
-        has_image=msg.image_url is not None,
-    )
+    from src.distributor.title_generator import generate_catchy_title
+    from src.distributor.offer_validator import validate_text_only, OfferValidationResult
 
-    # 6. Publicar no Telegram
+    _MAX_VALIDATION_ATTEMPTS = 2
+    offer_approved = False
+    validation = OfferValidationResult(approved=False, reasons=["not validated"])
+
+    for attempt in range(1, _MAX_VALIDATION_ATTEMPTS + 1):
+        force_new = attempt > 1
+
+        # 2. Gerar título catchy via IA (se disponível)
+        catchy_title: str | None = None
+        if settings.openrouter.api_key:
+            try:
+                catchy_title = await generate_catchy_title(
+                    product_title=product_title,
+                    category=category,
+                    price=float(offer["current_price"]),
+                    original_price=(
+                        float(offer["original_price"])
+                        if offer.get("original_price") else None
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("title_generation_failed", ml_id=ml_id, error=str(exc))
+
+        # 3. Selecionar melhor imagem real do produto
+        enhanced_image_url: str | None = None
+        image_bytes: bytes | None = None
+        if thumbnail_url:
+            enhanced_image_url, image_bytes = await _select_and_upload_image(
+                storage, product_id, ml_id, product_title,
+                thumbnail_url, category,
+                product_url=offer["product_url"],
+                force_new=force_new,
+            )
+
+        if not enhanced_image_url:
+            logger.info("sending_with_original_thumbnail", ml_id=ml_id)
+
+        # 4. Formatar mensagem (Style Guide v3)
+        msg = formatter.format(
+            product,
+            short_link=short_url,
+            catchy_title=catchy_title,
+            enhanced_image_url=enhanced_image_url,
+        )
+
+        # 5. Validar mensagem (soft — loga mas não bloqueia)
+        from src.distributor.message_validator import validate_message
+        validate_message(
+            whatsapp_text=msg.whatsapp_text,
+            free_shipping=product.free_shipping,
+            rating=product.rating,
+            review_count=product.review_count,
+            has_image=msg.image_url is not None,
+        )
+
+        # 6. Validação de texto/título (imagem já validada por camada)
+        validation = await validate_text_only(
+            whatsapp_text=msg.whatsapp_text,
+        )
+
+        if validation.approved:
+            logger.info(
+                "offer_validated",
+                ml_id=ml_id,
+                attempt=attempt,
+                reasons=validation.reasons,
+            )
+            offer_approved = True
+            break
+
+        logger.warning(
+            "offer_validation_failed",
+            ml_id=ml_id,
+            attempt=attempt,
+            reasons=validation.reasons,
+            suggestions=validation.suggestions,
+        )
+
+    if not offer_approved:
+        try:
+            await storage.discard_offer(
+                scored_offer_id,
+                reason=f"validation_failed_2x: {validation.reasons}",
+            )
+        except Exception as exc:
+            logger.warning("discard_offer_failed", ml_id=ml_id, error=str(exc))
+        logger.error("offer_discarded", ml_id=ml_id, reasons=validation.reasons)
+        return False
+
+    # 7. Publicar no Telegram
     if not settings.telegram.bot_token or not settings.telegram.group_ids:
         logger.warning("telegram_not_configured")
         return False

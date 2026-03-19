@@ -13,12 +13,23 @@ from src.config import settings
 logger = structlog.get_logger(__name__)
 
 
-async def download_image_bytes(url: str, timeout: float = 15.0) -> bytes | None:
-    """Baixa imagem da URL e retorna os bytes."""
+async def download_image_bytes(
+    url: str, timeout: float = 15.0, min_size_bytes: int = 0
+) -> bytes | None:
+    """Baixa imagem da URL e retorna os bytes.
+
+    Args:
+        url: URL da imagem.
+        timeout: Timeout para download.
+        min_size_bytes: Tamanho mínimo em bytes. Imagens menores são
+            descartadas (anti-placeholder). Use 0 para aceitar qualquer tamanho.
+    """
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url, follow_redirects=True)
             resp.raise_for_status()
+            if min_size_bytes > 0 and len(resp.content) < min_size_bytes:
+                return None
             return resp.content
     except Exception as exc:
         logger.error("image_download_failed", url=url[:80], error=str(exc))

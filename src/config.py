@@ -219,11 +219,17 @@ class OpenRouterConfig:
     lifestyle_image_model: str = field(
         default_factory=lambda: os.getenv("LIFESTYLE_IMAGE_MODEL", "nano-banana")
     )
-    # Validação de imagem com Haiku Vision (pipeline de seleção de imagem real)
-    image_validation_enabled: bool = field(
+    # Validação abrangente da oferta montada (imagem + título + texto) antes do envio
+    offer_validation_enabled: bool = field(
         default_factory=lambda: os.getenv(
-            "IMAGE_VALIDATION_ENABLED", "true"
+            "OFFER_VALIDATION_ENABLED", "true"
         ).lower() == "true"
+    )
+    # Modelo para validação de oferta (Gemini Flash é ~5x mais barato que Haiku)
+    offer_validation_model: str = field(
+        default_factory=lambda: os.getenv(
+            "OFFER_VALIDATION_MODEL", "google/gemini-2.5-flash"
+        )
     )
 
 
@@ -251,10 +257,6 @@ class SenderConfig:
     # Timezone para controle de horário
     timezone: str = field(
         default_factory=lambda: os.getenv("SENDER_TIMEZONE", "America/Sao_Paulo")
-    )
-    # Método de seleção de imagem: "layered" (busca em camadas) | "lifestyle" (IA)
-    image_method: str = field(
-        default_factory=lambda: os.getenv("IMAGE_METHOD", "layered").lower()
     )
     # Bucket do Supabase Storage para imagens
     supabase_bucket: str = field(
