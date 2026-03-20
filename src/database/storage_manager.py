@@ -929,6 +929,38 @@ class StorageManager:
         return await self._sqlite.get_enhanced_image_url(product_id)
 
     # ------------------------------------------------------------------
+    # title_examples
+    # ------------------------------------------------------------------
+
+    async def save_title_example(self, data: dict) -> str:
+        """Salva um exemplo de título em ambos os bancos."""
+        canonical_id: str | None = None
+        if self._using_supabase:
+            try:
+                canonical_id = await self._supabase.save_title_example(data)
+            except SupabaseError as exc:
+                logger.warning("supabase_title_example_failed", error=str(exc))
+
+        if canonical_id:
+            data["id"] = canonical_id
+        try:
+            local_id = await self._sqlite.save_title_example(data)
+        except SQLiteError as exc:
+            logger.warning("sqlite_title_example_failed", error=str(exc))
+            local_id = None
+
+        return canonical_id or local_id or ""
+
+    async def get_recent_title_examples(self, limit: int = 10) -> list[dict]:
+        """Retorna exemplos recentes de títulos aprovados/editados."""
+        if self._using_supabase:
+            try:
+                return await self._supabase.get_recent_title_examples(limit)
+            except SupabaseError:
+                pass
+        return await self._sqlite.get_recent_title_examples(limit)
+
+    # ------------------------------------------------------------------
     # system_logs
     # ------------------------------------------------------------------
 

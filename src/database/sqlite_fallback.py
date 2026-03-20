@@ -246,6 +246,23 @@ class SQLiteFallback:
         CREATE INDEX IF NOT EXISTS idx_al_user ON affiliate_links(user_id);
         CREATE INDEX IF NOT EXISTS idx_al_synced ON affiliate_links(synced);
 
+        CREATE TABLE IF NOT EXISTS title_examples (
+            id              TEXT PRIMARY KEY,
+            scored_offer_id TEXT REFERENCES scored_offers(id) ON DELETE SET NULL,
+            product_title   TEXT NOT NULL,
+            category        TEXT,
+            price           REAL,
+            generated_title TEXT NOT NULL,
+            final_title     TEXT NOT NULL,
+            action          TEXT NOT NULL CHECK (action IN ('approved', 'edited', 'timeout')),
+            created_at      TEXT DEFAULT (datetime('now')),
+            synced          INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_te_action ON title_examples(action);
+        CREATE INDEX IF NOT EXISTS idx_te_created ON title_examples(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_te_synced ON title_examples(synced);
+
         -- Views (SQLite usa datetime() em vez de NOW() - INTERVAL)
         DROP VIEW IF EXISTS vw_approved_unsent;
         CREATE VIEW vw_approved_unsent AS
@@ -1957,6 +1974,63 @@ class SQLiteFallback:
             return row[0] if row and row[0] else None
         except Exception:
             return None
+
+    # ------------------------------------------------------------------
+    # title_examples
+    # ------------------------------------------------------------------
+
+    async def save_title_example(self, data: dict) -> str:
+        """Salva um exemplo de título aprovado/editado."""
+        example_id = data.get("id") or str(uuid.uuid4())
+        try:
+            await self._db.execute(
+                """
+                INSERT INTO title_examples
+                    (id, scored_offer_id, product_title, category, price,
+                     generated_title, final_title, action, synced)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                """,
+                (
+                    example_id,
+                    data.get("scored_offer_id"),
+                    data["product_title"],
+                    data.get("category"),
+                    data.get("price"),
+                    data["generated_title"],
+                    data["final_title"],
+                    data["action"],
+                ),
+            )
+            await self._db.commit()
+            logger.debug("sqlite_title_example_saved", example_id=example_id)
+            return example_id
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="save_title_example") from exc
+
+    async def get_recent_title_examples(self, limit: int = 10) -> list[dict]:
+        """Retorna exemplos recentes de títulos aprovados/editados."""
+        try:
+            cursor = await self._db.execute(
+                """
+                SELECT product_title, final_title, action
+                FROM title_examples
+                WHERE action IN ('approved', 'edited')
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "product_title": row[0],
+                    "final_title": row[1],
+                    "action": row[2],
+                }
+                for row in rows
+            ]
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="get_recent_title_examples") from exc
 
     # ------------------------------------------------------------------
     # Métricas locais

@@ -922,6 +922,46 @@ class SupabaseClient:
             raise SupabaseError(str(exc), operation="get_enhanced_image_url") from exc
 
     # ------------------------------------------------------------------
+    # title_examples
+    # ------------------------------------------------------------------
+
+    async def save_title_example(self, data: dict) -> Optional[str]:
+        """Salva um exemplo de título aprovado/editado."""
+        row = {
+            "scored_offer_id": data.get("scored_offer_id"),
+            "product_title": data["product_title"],
+            "category": data.get("category"),
+            "price": data.get("price"),
+            "generated_title": data["generated_title"],
+            "final_title": data["final_title"],
+            "action": data["action"],
+        }
+        try:
+            result = await self._db.table("title_examples").insert(row).execute()
+            if result.data:
+                example_id: str = result.data[0]["id"]
+                logger.debug("supabase_title_example_saved", example_id=example_id)
+                return example_id
+            return None
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="save_title_example") from exc
+
+    async def get_recent_title_examples(self, limit: int = 10) -> list[dict]:
+        """Retorna exemplos recentes de títulos aprovados/editados."""
+        try:
+            result = (
+                await self._db.table("title_examples")
+                .select("product_title, final_title, action")
+                .in_("action", ["approved", "edited"])
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return result.data or []
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="get_recent_title_examples") from exc
+
+    # ------------------------------------------------------------------
     # Helpers internos
     # ------------------------------------------------------------------
 

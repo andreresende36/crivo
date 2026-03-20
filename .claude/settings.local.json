@@ -64,7 +64,10 @@
       "Bash(git rm:*)",
       "Bash(python -c \"from src.prompts_loader import load_prompt; print\\(load_prompt\\(''title_system''\\)[:60]\\); print\\(''---''\\); print\\(load_prompt\\(''classifier_user''\\)[:60]\\)\")",
       "Bash(python -c \"from src.sender import send_offer; print\\(''OK''\\)\")",
-      "Bash(python -c \"import src.sender; print\\(''OK''\\)\")"
+      "Bash(python -c \"import src.sender; print\\(''OK''\\)\")",
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in [''src/config.py'', ''src/distributor/title_generator.py'', ''src/distributor/title_review_bot.py'', ''src/database/title_examples.py'', ''src/sender.py'', ''src/runner.py'', ''src/database/storage_manager.py'', ''src/database/supabase_client.py'']]\")",
+      "Bash(pip show:*)",
+      "Bash(python -c \"from telegram.ext import Updater; import inspect; sig = inspect.signature\\(Updater.start_polling\\); print\\(sig\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,

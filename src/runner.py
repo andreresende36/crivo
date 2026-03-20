@@ -31,6 +31,7 @@ from src.sender import send_next_offer
 from src.monitoring.alert_bot import AlertBot
 from src.monitoring.health_check import HealthCheck
 from src.monitoring.state import MonitorState
+from src.distributor.title_review_bot import TitleReviewBot
 import uvicorn
 
 setup_logging()
@@ -163,6 +164,7 @@ async def sender_loop(
     storage: StorageManager,
     shutdown: asyncio.Event,
     alert_bot: AlertBot,
+    title_review_bot: TitleReviewBot | None = None,
 ) -> None:
     """Envia ofertas da fila com distribuição temporal do Style Guide v3."""
 
@@ -182,7 +184,9 @@ async def sender_loop(
             continue
 
         try:
-            sent = await send_next_offer(storage)
+            sent = await send_next_offer(
+                storage, title_review_bot=title_review_bot
+            )
             if not sent:
                 logger.debug("sender_queue_empty_waiting")
         except Exception as exc:
@@ -255,12 +259,41 @@ async def main() -> None:
     except Exception as exc:
         logger.warning("health_check_failed", error=str(exc))
 
+    # Title Review Bot (opcional — habilitado via TITLE_REVIEW_ENABLED=true)
+    title_review_bot: TitleReviewBot | None = None
+    if settings.title_review.enabled:
+        title_review_bot = TitleReviewBot()
+        try:
+            await title_review_bot.start()
+            logger.info("title_review_enabled")
+        except Exception as exc:
+            logger.warning("title_review_bot_start_failed", error=str(exc))
+            title_review_bot = None
+
     async with StorageManager() as storage:
-        await asyncio.gather(
-            scraper_loop(storage, shutdown, alert_bot),
-            sender_loop(storage, shutdown, alert_bot),
-            api_loop(shutdown),
-        )
+        tasks = [
+            asyncio.create_task(scraper_loop(storage, shutdown, alert_bot)),
+            asyncio.create_task(
+                sender_loop(storage, shutdown, alert_bot, title_review_bot)
+            ),
+            asyncio.create_task(api_loop(shutdown)),
+        ]
+
+        # Espera o shutdown ser sinalizado (Ctrl+C / SIGTERM)
+        await shutdown.wait()
+        logger.info("runner_shutting_down")
+
+        # Para o review bot
+        if title_review_bot:
+            try:
+                await title_review_bot.stop()
+            except Exception as exc:
+                logger.warning("title_review_bot_stop_error", error=str(exc))
+
+        # Cancela todas as tasks e dá 5s para cleanup
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     logger.info("runner_shutdown_complete")
 

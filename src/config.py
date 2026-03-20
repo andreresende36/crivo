@@ -48,6 +48,10 @@ class TelegramConfig:
     admin_chat_id: str = field(
         default_factory=lambda: os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
     )
+    # Token do bot de alertas/monitoramento (separado do bot de ofertas)
+    alert_bot_token: str = field(
+        default_factory=lambda: os.getenv("TELEGRAM_ALERT_BOT_TOKEN", "")
+    )
     # Delay entre mensagens para evitar flood (segundos)
     send_delay: float = field(
         default_factory=lambda: float(os.getenv("TELEGRAM_SEND_DELAY", "1.5"))
@@ -257,6 +261,31 @@ class SenderConfig:
 
 
 # ---------------------------------------------------------------------------
+# Title Review (feedback loop para treinamento de títulos)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TitleReviewConfig:
+    # Habilita revisão de títulos pelo admin via Telegram
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("TITLE_REVIEW_ENABLED", "false").lower() == "true"
+    )
+    # Timeout em segundos para o admin responder (auto-aprova se expirar)
+    timeout_seconds: int = field(
+        default_factory=lambda: int(os.getenv("TITLE_REVIEW_TIMEOUT", "300"))
+    )
+    # Máximo de regenerações ao rejeitar título
+    max_regenerations: int = field(
+        default_factory=lambda: int(os.getenv("TITLE_REVIEW_MAX_REGEN", "3"))
+    )
+    # Quantidade de exemplos aprovados injetados no prompt (few-shot)
+    examples_in_prompt: int = field(
+        default_factory=lambda: int(os.getenv("TITLE_REVIEW_EXAMPLES_COUNT", "10"))
+    )
+
+
+# ---------------------------------------------------------------------------
 # SQLite Fallback
 # ---------------------------------------------------------------------------
 
@@ -285,6 +314,7 @@ class Settings:
     score: ScoreConfig = field(default_factory=ScoreConfig)
     openrouter: OpenRouterConfig = field(default_factory=OpenRouterConfig)
     sender: SenderConfig = field(default_factory=SenderConfig)
+    title_review: TitleReviewConfig = field(default_factory=TitleReviewConfig)
     sqlite: SQLiteConfig = field(default_factory=SQLiteConfig)
 
     # Ambiente de execução

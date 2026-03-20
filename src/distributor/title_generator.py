@@ -16,8 +16,8 @@ Gera títulos catchy para ofertas usando Claude Haiku via OpenRouter.
 from __future__ import annotations
 
 import asyncio
-import random
 import re
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
@@ -27,6 +27,9 @@ from src.prompts_loader import load_prompt
 from src.utils.brands import extract_brand
 from src.utils.openrouter import OPENROUTER_URL
 
+if TYPE_CHECKING:
+    from src.database.title_examples import TitleExample
+
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -34,21 +37,6 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 HAIKU_MODEL = "anthropic/claude-haiku-4-5"
-
-# Fórmulas com pesos para random.choices()
-FORMULAS: list[tuple[str, int]] = [
-    ("beneficio_direto", 25),
-    ("humor", 15),
-    ("comparacao", 10),
-    ("chamada_genero", 10),
-    ("superlativo", 10),
-    ("x_do_duro", 5),
-    ("pergunta_retorica", 5),
-    ("mix", 20),
-]
-
-FORMULA_NAMES = [f[0] for f in FORMULAS]
-FORMULA_WEIGHTS = [f[1] for f in FORMULAS]
 
 # ---------------------------------------------------------------------------
 # System prompt com fórmulas e exemplos few-shot
@@ -60,15 +48,12 @@ _TITLE_USER_TEMPLATE = (
     "Categoria: {category}\n"
     "Preço: R$ {price:.2f}{discount_info}\n"
     "\n"
-    "Fórmula a usar: {formula}\n"
-    "Gere UM título seguindo esta fórmula."
+    "Gere UM título."
 )
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
 
 
 def _fallback_title(product_title: str) -> str:
@@ -77,11 +62,6 @@ def _fallback_title(product_title: str) -> str:
     if brand:
         return f"{brand.upper()} COM PREÇÃO"[:35]
     return "OFERTA IMPERDÍVEL"
-
-
-def _select_formula() -> str:
-    """Seleciona fórmula por peso."""
-    return random.choices(FORMULA_NAMES, weights=FORMULA_WEIGHTS, k=1)[0]
 
 
 def _clean_title(raw: str) -> str:
@@ -95,7 +75,7 @@ def _clean_title(raw: str) -> str:
     # Remove asteriscos, aspas, emojis de prefixo
     title = raw.strip().strip("*").strip('"').strip("'").strip()
     # Remove emojis comuns que o Haiku às vezes adiciona
-    title = re.sub(r'[\U0001F300-\U0001F9FF]', '', title).strip()
+    title = re.sub(r"[\U0001F300-\U0001F9FF]", "", title).strip()
     # Garante CAPS LOCK
     title = title.upper()
 
@@ -107,18 +87,30 @@ def _clean_title(raw: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _build_system_prompt(examples: list[TitleExample] | None = None) -> str:
+    """Monta o system prompt, opcionalmente injetando exemplos few-shot aprovados."""
+    if not examples:
+        return SYSTEM_PROMPT
+
+    examples_text = "\n\n## EXEMPLOS RECENTES APROVADOS PELO ADMIN\nUse estes exemplos como referência do estilo desejado:\n"
+    for ex in examples:
+        label = "(editado)" if ex.action == "edited" else ""
+        examples_text += f"\nProduto: {ex.product_title}\nTítulo: {ex.final_title} {label}\n"
+
+    return SYSTEM_PROMPT + examples_text
+
+
 def _generate_sync(
     product_title: str,
     category: str,
     price: float,
     original_price: float | None,
+    examples: list[TitleExample] | None = None,
 ) -> str:
     """Gera título via Haiku (síncrono)."""
     api_key = settings.openrouter.api_key
     if not api_key:
         return _fallback_title(product_title)
-
-    formula = _select_formula()
 
     discount_info = ""
     if original_price and original_price > price:
@@ -130,8 +122,9 @@ def _generate_sync(
         category=category,
         price=price,
         discount_info=discount_info,
-        formula=formula,
     )
+
+    system_prompt = _build_system_prompt(examples)
 
     headers = {
         "Content-Type": "application/json",
@@ -147,7 +140,7 @@ def _generate_sync(
             json={
                 "model": HAIKU_MODEL,
                 "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg},
                 ],
                 "max_tokens": 64,
@@ -176,7 +169,6 @@ def _generate_sync(
 
     logger.info(
         "title_generated",
-        formula=formula,
         title=title,
         length=len(title),
         product=product_title[:40],
@@ -194,6 +186,7 @@ async def generate_catchy_title(
     category: str,
     price: float,
     original_price: float | None = None,
+    examples: list[TitleExample] | None = None,
 ) -> str:
     """
     Gera título catchy usando Claude Haiku via OpenRouter.
@@ -204,6 +197,7 @@ async def generate_catchy_title(
         category: Categoria do produto.
         price: Preço final (ou pix).
         original_price: Preço original (para calcular desconto).
+        examples: Exemplos aprovados para injeção few-shot no prompt.
 
     Returns:
         Título catchy em CAPS LOCK, 20-40 chars.
@@ -217,6 +211,7 @@ async def generate_catchy_title(
             category,
             price,
             original_price,
+            examples,
         )
         return title
     except Exception as exc:
