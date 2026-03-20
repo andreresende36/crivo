@@ -61,7 +61,10 @@
       "Bash(git stash:*)",
       "Bash(python -m pytest tests/test_affiliate_link.py tests/test_integration.py tests/test_scrapers.py -q)",
       "Bash(python -m pytest tests/ -q --ignore=tests/test_affiliate_link.py --ignore=tests/test_integration.py --ignore=tests/test_scrapers.py)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(python -c \"from src.prompts_loader import load_prompt; print\\(load_prompt\\(''title_system''\\)[:60]\\); print\\(''---''\\); print\\(load_prompt\\(''classifier_user''\\)[:60]\\)\")",
+      "Bash(python -c \"from src.sender import send_offer; print\\(''OK''\\)\")",
+      "Bash(python -c \"import src.sender; print\\(''OK''\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,
