@@ -4,6 +4,7 @@ Endpoints para coletar estado do runner.py e a fila do banco.
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
@@ -11,10 +12,26 @@ import structlog
 
 from src.monitoring.state import MonitorState
 from src.database.storage_manager import StorageManager
+from src.api.admin import router as admin_router
 
 logger = structlog.get_logger(__name__)
 
 app = FastAPI(title="DealHunter Monitor")
+
+# CORS para o painel admin (Next.js em dev: localhost:3000)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Monta o router do painel admin
+app.include_router(admin_router)
 
 
 @app.get("/api/state")

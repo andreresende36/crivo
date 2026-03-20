@@ -69,7 +69,7 @@ class AlertBot:
             detail_lines = "\n".join(f"• `{k}`: {v}" for k, v in details.items())
             text += f"\n\n*Detalhes:*\n{detail_lines}"
 
-        return await self._send_telegram_message(text)
+        return await self._send_telegram_message(text, severity)
 
     async def send_health_report(self, report_summary: str) -> bool:
         """Envia relatório de health check."""
@@ -77,7 +77,7 @@ class AlertBot:
             f"📊 *Health Check*\n\n```\n{report_summary}\n```"
         )
 
-    async def _send_telegram_message(self, text: str) -> bool:
+    async def _send_telegram_message(self, text: str, severity: str = "info") -> bool:
         """Envia mensagem via Bot API REST."""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -92,6 +92,17 @@ class AlertBot:
                 )
                 data = response.json()
                 if data.get("ok"):
+                    # Auto-pin for critical alerts
+                    if severity == "critical":
+                        message_id = data["result"]["message_id"]
+                        await client.post(
+                            f"{self.base_url}/pinChatMessage",
+                            json={
+                                "chat_id": self.admin_chat_id,
+                                "message_id": message_id,
+                                "disable_notification": False
+                            },
+                        )
                     return True
                 logger.error("alert_send_failed", response=data)
                 return False

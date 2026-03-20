@@ -271,8 +271,9 @@ async def send_next_offer(
                 catchy_title = result.final_title
                 break
             elif result.action == "timeout":
-                # Auto-aprova
-                break
+                logger.warning("title_review_timeout_reverting", ml_id=ml_id)
+                await storage.revert_to_pending(scored_offer_id)
+                return False
             elif result.action == "rejected":
                 if attempt < max_regen:
                     logger.info(

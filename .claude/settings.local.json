@@ -67,7 +67,19 @@
       "Bash(python -c \"import src.sender; print\\(''OK''\\)\")",
       "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in [''src/config.py'', ''src/distributor/title_generator.py'', ''src/distributor/title_review_bot.py'', ''src/database/title_examples.py'', ''src/sender.py'', ''src/runner.py'', ''src/database/storage_manager.py'', ''src/database/supabase_client.py'']]\")",
       "Bash(pip show:*)",
-      "Bash(python -c \"from telegram.ext import Updater; import inspect; sig = inspect.signature\\(Updater.start_polling\\); print\\(sig\\)\")"
+      "Bash(python -c \"from telegram.ext import Updater; import inspect; sig = inspect.signature\\(Updater.start_polling\\); print\\(sig\\)\")",
+      "Bash(npx create-next-app@latest admin --typescript --tailwind --eslint --app --src-dir --no-import-alias --use-npm)",
+      "Bash(yes \"\")",
+      "Bash(npx create-next-app@latest admin --typescript --tailwind --eslint --app --src-dir --no-import-alias --use-npm --turbopack)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add card table tabs badge input dropdown-menu sheet dialog scroll-area separator avatar tooltip skeleton select checkbox -y)",
+      "Bash(npm run:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python3 -m json.tool)",
+      "mcp__supabase__get_project_url",
+      "mcp__supabase__get_publishable_keys",
+      "Bash(curl -s -X POST http://localhost:8000/api/admin/scrape-now)"
     ]
   },
   "enableAllProjectMcpServers": true,

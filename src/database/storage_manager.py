@@ -739,6 +739,28 @@ class StorageManager:
                 logger.warning("supabase_discard_failed", error=str(exc))
         return local_ok
 
+    async def revert_to_pending(self, scored_offer_id: str) -> bool:
+        """Marca oferta como pendente (fallback para timeouts)."""
+        local_ok = False
+        try:
+            local_ok = await self._sqlite.revert_to_pending(scored_offer_id)
+        except SQLiteError as exc:
+            if "FOREIGN KEY" in str(exc):
+                logger.debug(
+                    "sqlite_fk_skip",
+                    scored_offer_id=scored_offer_id,
+                    table="scored_offers",
+                )
+            else:
+                logger.warning("sqlite_revert_failed", error=str(exc))
+                raise
+        if self._using_supabase:
+            try:
+                return await self._supabase.revert_to_pending(scored_offer_id)
+            except SupabaseError as exc:
+                logger.warning("supabase_revert_failed", error=str(exc))
+        return local_ok
+
     async def was_recently_sent(self, ml_id: str, hours: int = 24) -> bool:
         """Verifica se o produto foi enviado nas últimas N horas."""
         if self._using_supabase:

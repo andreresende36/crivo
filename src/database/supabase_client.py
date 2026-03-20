@@ -536,6 +536,19 @@ class SupabaseClient:
                 str(exc), operation="get_pending_scored_offers"
             ) from exc
 
+    async def revert_to_pending(self, scored_offer_id: str) -> bool:
+        """Marca oferta como pendente (fallback para timeouts)."""
+        try:
+            await (
+                self._db.table("scored_offers")
+                .update({"status": "pending"})
+                .eq("id", scored_offer_id)
+                .execute()
+            )
+            return True
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="revert_to_pending") from exc
+
     # ------------------------------------------------------------------
     # sent_offers
     # ------------------------------------------------------------------

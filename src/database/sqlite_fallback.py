@@ -1939,6 +1939,22 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="discard_offer") from exc
 
+    async def revert_to_pending(self, scored_offer_id: str) -> bool:
+        """Marca oferta como pendente (fallback para timeouts)."""
+        try:
+            await self._db.execute(
+                "UPDATE scored_offers SET status = 'pending' WHERE id = ?",
+                (scored_offer_id,),
+            )
+            await self._db.commit()
+            await self.log_event(
+                "offer_reverted",
+                {"scored_offer_id": scored_offer_id},
+            )
+            return True
+        except Exception as exc:
+            raise SQLiteError(str(exc), operation="revert_to_pending") from exc
+
     async def update_image_status(
         self,
         product_id: str,

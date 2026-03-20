@@ -42,8 +42,6 @@ def _escape_mdv2_url(url: str) -> str:
     return url.translate(_MDV2_URL_TRANS)
 
 
-
-
 def _extract_brand(title: str) -> str | None:
     """Extrai marca conhecida do título do produto (UPPER CASE)."""
     brand = _extract_brand_raw(title)
@@ -135,16 +133,25 @@ class MessageFormatter:
         final_price_str = self._format_price(final_price)
         original_price_str = self._format_price(original_price)
 
+        # Calcula o valor absoluto economizado
+        savings = original_price - final_price if (original_price > 0 and original_price > final_price) else 0
+
+        # Verifica se é uma super oferta para adicionar tag de urgência
+        is_flash_sale = discount_pct >= 50 or getattr(product, 'final_score', 0) >= 90
+        flash_sale_line = "🚨 *Promoção Relâmpago / Acaba Rápido*\n\n" if is_flash_sale else ""
+
         # --- WhatsApp (plain text com bold *...* ) ---
         whatsapp_text = self._build_whatsapp(
             title=title,
             product_name=product_name,
             discount_pct=discount_pct,
+            savings=savings,
             original_price_str=original_price_str,
             final_price_str=final_price_str,
             payment_suffix=payment_suffix,
             free_shipping_line=free_shipping_line,
             rating_line=rating_line,
+            flash_sale_line=flash_sale_line,
             link=short_link,
         )
 
@@ -153,11 +160,13 @@ class MessageFormatter:
             title=title,
             product_name=product_name,
             discount_pct=discount_pct,
+            savings=savings,
             original_price_str=original_price_str,
             final_price_str=final_price_str,
             payment_suffix=payment_suffix,
             free_shipping_line=free_shipping_line,
             rating_line=rating_line,
+            flash_sale_line=flash_sale_line,
             link=short_link,
         )
 
@@ -180,22 +189,34 @@ class MessageFormatter:
         title: str,
         product_name: str,
         discount_pct: int,
+        savings: float,
         original_price_str: str,
         final_price_str: str,
         payment_suffix: str,
         free_shipping_line: str,
         rating_line: str,
+        flash_sale_line: str,
         link: str,
     ) -> str:
         """Monta mensagem WhatsApp (plain text com bold *...*)."""
-        lines = [
+        lines = []
+        if flash_sale_line:
+            lines.append(flash_sale_line.strip())
+            lines.append("")
+
+        lines.extend([
             f"*{title}*",
             "",
             product_name,
             "",
-            f"📉 {discount_pct}% OFF",
-            f"de R${original_price_str} *por R$ {final_price_str}{payment_suffix}* 🤘🏻",
-        ]
+        ])
+
+        if savings > 0:
+            lines.append(f"💸 *Desconto de R$ {self._format_price(savings)}!*")
+            lines.append(f"de R$ {original_price_str} *por R$ {final_price_str}{payment_suffix}* 🤘🏻")
+        else:
+            lines.append(f"📉 {discount_pct}% OFF")
+            lines.append(f"*por R$ {final_price_str}{payment_suffix}* 🤘🏻")
 
         # Bloco condicional (frete + avaliação)
         conditional = ""
@@ -217,11 +238,13 @@ class MessageFormatter:
         title: str,
         product_name: str,
         discount_pct: int,
+        savings: float,
         original_price_str: str,
         final_price_str: str,
         payment_suffix: str,
         free_shipping_line: str,
         rating_line: str,
+        flash_sale_line: str,
         link: str,
     ) -> str:
         """Monta mensagem Telegram (MarkdownV2)."""
@@ -232,6 +255,8 @@ class MessageFormatter:
         esc_final = _escape_mdv2(final_price_str)
         esc_suffix = _escape_mdv2(payment_suffix)
         esc_link = _escape_mdv2_url(link)
+        esc_savings = _escape_mdv2(self._format_price(savings)) if savings > 0 else ""
+        esc_flash_sale = _escape_mdv2(flash_sale_line.strip()) if flash_sale_line else ""
 
         # Frete e avaliação já vêm como texto puro — escapar
         esc_shipping = (
@@ -240,14 +265,24 @@ class MessageFormatter:
         )
         esc_rating = _escape_mdv2(rating_line) if rating_line else ""
 
-        lines = [
+        lines = []
+        if esc_flash_sale:
+            lines.append(f"*{esc_flash_sale}*")
+            lines.append("")
+
+        lines.extend([
             f"*{esc_title}*",
             "",
             esc_name,
             "",
-            f"📉 {esc_discount}% OFF",
-            f"de R$ {esc_original} *por R$ {esc_final}{esc_suffix}* 🤘🏻",
-        ]
+        ])
+
+        if savings > 0:
+            lines.append(f"💸 *Desconto de R$ {esc_savings}\\!*")
+            lines.append(f"de ~R$ {esc_original}~ *por R$ {esc_final}{esc_suffix}* 🤘🏻")
+        else:
+            lines.append(f"📉 {esc_discount}% OFF")
+            lines.append(f"*por R$ {esc_final}{esc_suffix}* 🤘🏻")
 
         conditional = ""
         if esc_shipping or esc_rating:
