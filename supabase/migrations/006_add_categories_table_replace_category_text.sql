@@ -1,5 +1,5 @@
 -- =============================================================================
--- DealHunter — Migration: add_categories_table_replace_category_text
+-- Crivo — Migration: add_categories_table_replace_category_text
 -- Versão: 20260309210131
 --
 -- Cria tabela de lookup para categorias do Mercado Livre,

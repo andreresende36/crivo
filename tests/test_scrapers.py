@@ -1,5 +1,5 @@
 """
-Testes para os scrapers do DealHunter.
+Testes para os scrapers do Crivo.
 Usa mocks para evitar chamadas reais ao Mercado Livre.
 """
 
@@ -888,7 +888,8 @@ class TestPriceExtraction:
         soup = BeautifulSoup(html, "lxml")
         card = soup.select_one(".poly-card")
 
-        assert self.scraper._get_current_price(card) == 499.90
+        card_price, _pix = self.scraper._get_prices(card)
+        assert card_price == 499.90
         assert self.scraper._get_original_price(card) == 999.0
 
     def test_prices_from_del_tag(self):
@@ -905,7 +906,8 @@ class TestPriceExtraction:
         soup = BeautifulSoup(html, "lxml")
         card = soup.select_one(".promotion-item")
 
-        assert self.scraper._get_current_price(card) == 249.0
+        card_price, _pix = self.scraper._get_prices(card)
+        assert card_price == 249.0
         assert self.scraper._get_original_price(card) == 499.0
 
     def test_no_original_price(self):
@@ -921,5 +923,6 @@ class TestPriceExtraction:
         soup = BeautifulSoup(html, "lxml")
         card = soup.select_one(".poly-card")
 
-        assert self.scraper._get_current_price(card) == 99.0
+        card_price, _pix = self.scraper._get_prices(card)
+        assert card_price == 99.0
         assert self.scraper._get_original_price(card) is None

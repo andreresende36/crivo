@@ -1,5 +1,5 @@
 # =============================================================================
-# DealHunter — Dependências Python
+# Crivo — Dependências Python
 # Instalar com: pip install -r requirements.txt
 # =============================================================================
 

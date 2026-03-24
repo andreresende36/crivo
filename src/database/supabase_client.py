@@ -1,5 +1,5 @@
 """
-DealHunter — Supabase Client
+Crivo — Supabase Client
 Interface assíncrona com o PostgreSQL via Supabase.
 
 Tabelas gerenciadas:

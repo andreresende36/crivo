@@ -1,37 +1,36 @@
-version: "3.9"
-
 # =============================================================================
-# DealHunter — Docker Compose
-# Serviços: dealhunter app, n8n (orquestrador)
+# Crivo — Docker Compose
+# Serviços: app (scraper+sender+api), admin (Next.js)
 # Uso: docker compose up -d
 # =============================================================================
 
 networks:
-  dealhunter_net:
+  crivo_net:
     driver: bridge
 
 volumes:
-  n8n_data:
-  dealhunter_data:
+  crivo_data:
 
 services:
 
   # ---------------------------------------------------------------------------
-  # DealHunter — Aplicação principal
+  # Crivo — Aplicação principal (scraper + sender + API na porta 8000)
   # ---------------------------------------------------------------------------
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: dealhunter_app
+    container_name: crivo_app
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "8000:8000"
     volumes:
-      - dealhunter_data:/app/data
-      - ./src:/app/src:ro           # Hot-reload em dev (read-only em prod)
+      - crivo_data:/app/data
+      - ./src:/app/src:ro
       - ./logs:/app/logs
     networks:
-      - dealhunter_net
+      - crivo_net
     environment:
       - APP_ENV=${APP_ENV:-development}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -43,33 +42,23 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
-  # n8n — Orquestração de workflows / webhooks
-  # Acesso: http://localhost:5678
+  # Admin — Painel Next.js (porta 3000)
+  # Acesso: http://localhost:3000
   # ---------------------------------------------------------------------------
-  n8n:
-    image: n8nio/n8n:latest
-    container_name: dealhunter_n8n
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: crivo_admin
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      - "3000:3000"
     environment:
-      - N8N_HOST=${N8N_HOST:-localhost}
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-changeme}
-      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678}
-      - GENERIC_TIMEZONE=America/Sao_Paulo
-      - TZ=America/Sao_Paulo
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - ./n8n/workflows:/home/node/.n8n/workflows:ro
+      - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_API_URL=http://app:8000
     networks:
-      - dealhunter_net
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5678/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - crivo_net
+    depends_on:
+      - app
 

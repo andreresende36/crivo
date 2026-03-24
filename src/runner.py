@@ -1,5 +1,5 @@
 """
-DealHunter — Runner (Style Guide v3)
+Crivo — Runner (Style Guide v3)
 Processo long-running com 2 coroutines:
   - scraper_loop: roda o pipeline de scraping a cada 1h (24/7)
   - sender_loop: envia ofertas da fila com distribuição temporal (8h-23h BRT)
@@ -27,7 +27,7 @@ from src.logging_config import setup_logging
 from src.config import settings
 from src.database.storage_manager import StorageManager
 from src.main import run_pipeline
-from src.sender import send_next_offer
+from src.distributor.sender import send_next_offer
 from src.monitoring.alert_bot import AlertBot
 from src.monitoring.health_check import HealthCheck
 from src.monitoring.state import MonitorState

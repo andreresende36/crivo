@@ -1,5 +1,5 @@
 """
-DealHunter — Health Check
+Crivo — Health Check
 Verifica a saúde de todos os serviços do sistema.
 Pode ser chamado pelo endpoint HTTP do n8n ou diretamente.
 """
@@ -61,7 +61,7 @@ class HealthReport:
 
 class HealthCheck:
     """
-    Verifica a saúde dos serviços do DealHunter.
+    Verifica a saúde dos serviços do Crivo.
 
     Uso:
         checker = HealthCheck()

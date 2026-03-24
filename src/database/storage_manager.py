@@ -1,5 +1,5 @@
 """
-DealHunter — Storage Manager
+Crivo — Storage Manager
 Abstração que unifica Supabase e SQLite Fallback em uma interface única.
 
 Estratégia:

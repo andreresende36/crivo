@@ -1,5 +1,5 @@
 -- =============================================================================
--- DealHunter — Schema PostgreSQL (Supabase)
+-- Crivo — Schema PostgreSQL (Supabase)
 -- Versão: 2.0 (Semana 1, Dias 3-5)
 --
 -- Executar via: Supabase Dashboard → SQL Editor → New Query

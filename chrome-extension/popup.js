@@ -1,4 +1,4 @@
-// DealHunter — ML Cookie Extractor
+// Crivo — ML Cookie Extractor
 // Extrai cookies de sessão do Mercado Livre e CSRF token,
 // formata como variáveis .env e copia para o clipboard.
 

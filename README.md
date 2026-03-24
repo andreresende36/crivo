@@ -1,10 +1,10 @@
-# DealHunter 🖤
+# Crivo 🖤
 
 > **"Todo dia é Black Friday"** — Sistema automatizado de caça de ofertas para os grupos *Sempre Black* no WhatsApp e Telegram.
 
 ## O que é
 
-O DealHunter monitora continuamente o Mercado Livre, filtra ofertas genuínas com regras e IA, e publica automaticamente nos grupos com links de afiliado. Inclui um painel admin completo para gerenciar ofertas, fila de envio e acompanhar métricas.
+O Crivo monitora continuamente o Mercado Livre, filtra ofertas genuínas com regras e IA, e publica automaticamente nos grupos com links de afiliado. Inclui um painel admin completo para gerenciar ofertas, fila de envio e acompanhar métricas.
 
 **Pipeline principal:**
 ```
@@ -33,7 +33,7 @@ Mercado Livre → Scraper → Dedup → Fake Filter → Score Engine → DB → 
 ## Estrutura do Projeto
 
 ```
-dealhunter/
+crivo/
 ├── src/
 │   ├── main.py                        # Pipeline principal (scrape → score → save)
 │   ├── runner.py                      # Processo long-running (scraper + sender loops)
@@ -131,7 +131,7 @@ dealhunter/
 
 ```bash
 git clone <repo-url>
-cd dealhunter
+cd crivo
 
 # Backend Python
 python -m venv .venv

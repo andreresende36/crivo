@@ -1,5 +1,5 @@
 -- =============================================================================
--- DealHunter — Migration: add_badges_table_and_badge_id
+-- Crivo — Migration: add_badges_table_and_badge_id
 -- Versão: 20260309204836
 --
 -- Cria tabela de lookup para badges de oferta do Mercado Livre

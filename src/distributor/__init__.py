@@ -1,5 +1,5 @@
 """
-DealHunter — Módulo de Distribuição
+Crivo — Módulo de Distribuição
 Publica ofertas nos grupos WhatsApp e Telegram "Sempre Black".
 """
 

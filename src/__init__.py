@@ -1,1 +1,1 @@
-"""DealHunter — Sistema automatizado de caça de ofertas."""
+"""Crivo — Sistema automatizado de caça de ofertas."""

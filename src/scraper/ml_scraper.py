@@ -1,5 +1,5 @@
 """
-DealHunter — Scraper Unificado do Mercado Livre
+Crivo — Scraper Unificado do Mercado Livre
 Coleta ofertas do Mercado Livre (Ofertas do Dia) com extração
 padronizada de todos os campos dos cards de listagem.
 

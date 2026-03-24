@@ -1,13 +1,13 @@
 # =============================================================================
-# DealHunter — Dockerfile
+# Crivo — Dockerfile
 # Python 3.11 + Playwright (Chromium headless)
-# Build: docker build -t dealhunter .
+# Build: docker build -t crivo .
 # =============================================================================
 
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # Metadados
-LABEL maintainer="DealHunter <contato@sempreblack.com.br>"
+LABEL maintainer="Crivo <contato@sempreblack.com.br>"
 LABEL description="Sistema automatizado de caça de ofertas — Sempre Black"
 
 # Variáveis de build
@@ -16,13 +16,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers \
     TZ=America/Sao_Paulo
 
-# Dependências de sistema necessárias para Playwright/Chromium
+# Dependências de sistema para Playwright/Chromium + fontes
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
     gnupg \
     ca-certificates \
     tzdata \
+    fonts-liberation \
+    fonts-noto-color-emoji \
     # Deps do Chromium
     libnss3 \
     libnspr4 \
@@ -54,21 +56,20 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Instala browsers do Playwright (apenas Chromium para economizar espaço)
-RUN playwright install chromium && \
-    playwright install-deps chromium
+# Instala Chromium do Playwright (deps já instaladas acima)
+RUN playwright install chromium
 
-# Copia código-fonte
+# Copia código-fonte e prompts
 COPY src/ ./src/
-COPY n8n/ ./n8n/
+COPY prompts/ ./prompts/
 
 # Cria diretórios de dados e logs
 RUN mkdir -p /app/data /app/logs
 
 # Usuário não-root para segurança
-RUN useradd --create-home --shell /bin/bash dealhunter && \
-    chown -R dealhunter:dealhunter /app
-USER dealhunter
+RUN useradd --create-home --shell /bin/bash crivo && \
+    chown -R crivo:crivo /app
+USER crivo
 
 # Healthcheck
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \

@@ -1,5 +1,5 @@
 """
-DealHunter Monitor API
+Crivo Monitor API
 Endpoints para coletar estado do runner.py e a fila do banco.
 """
 
@@ -16,7 +16,7 @@ from src.api.admin import router as admin_router
 
 logger = structlog.get_logger(__name__)
 
-app = FastAPI(title="DealHunter Monitor")
+app = FastAPI(title="Crivo Monitor")
 
 # CORS para o painel admin (Next.js em dev: localhost:3000)
 app.add_middleware(

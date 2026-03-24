@@ -1,5 +1,5 @@
 """
-DealHunter — Módulo de Banco de Dados
+Crivo — Módulo de Banco de Dados
 Supabase (principal) com SQLite como fallback e buffer local.
 
 Uso típico:

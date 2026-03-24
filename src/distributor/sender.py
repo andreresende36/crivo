@@ -1,5 +1,5 @@
 """
-DealHunter — Sender (Style Guide v3)
+Garimpou — Sender (Style Guide v3)
 Envia a próxima oferta da fila de prioridade (maior score primeiro).
 
 Fluxo:

@@ -1,5 +1,5 @@
 """
-DealHunter — Title Generator (Style Guide v3)
+Crivo — Title Generator (Style Guide v3)
 Gera títulos catchy para ofertas usando Claude Haiku via OpenRouter.
 
 7 fórmulas em rotação com pesos do style guide:
@@ -23,7 +23,7 @@ import httpx
 import structlog
 
 from src.config import settings
-from src.prompts_loader import load_prompt
+from src.utils.prompts_loader import load_prompt
 from src.utils.brands import extract_brand
 from src.utils.openrouter import OPENROUTER_URL
 
@@ -129,8 +129,8 @@ def _generate_sync(
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
-        "HTTP-Referer": "https://dealhunter.ai",
-        "X-Title": "DealHunter",
+        "HTTP-Referer": "https://crivo.ai",
+        "X-Title": "Crivo",
     }
 
     with httpx.Client(timeout=10.0) as client:

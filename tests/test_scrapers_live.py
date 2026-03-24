@@ -1,5 +1,5 @@
 """
-DealHunter — Teste REAL contra o Mercado Livre.
+Crivo — Teste REAL contra o Mercado Livre.
 Abre o browser (headless), carrega a página de ofertas e valida os seletores.
 
 Rodar com:

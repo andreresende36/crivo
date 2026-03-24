@@ -1,5 +1,5 @@
 -- =============================================================================
--- DealHunter — Migration: add_scored_offers_product_id_unique
+-- Crivo — Migration: add_scored_offers_product_id_unique
 -- Versão: 20260310000000
 --
 -- Adiciona unique constraint em scored_offers.product_id para garantir

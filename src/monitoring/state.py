@@ -1,5 +1,5 @@
 """
-DealHunter Monitor - Shared State
+Crivo Monitor - Shared State
 Armazena variáveis em memória para exibir na interface web em tempo real.
 """
 

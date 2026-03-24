@@ -1,5 +1,5 @@
 """
-DealHunter — Modulo de Analise de Ofertas
+Crivo — Modulo de Analise de Ofertas
 Avalia a qualidade das ofertas via regras deterministicas.
 """
 

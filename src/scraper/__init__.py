@@ -1,5 +1,5 @@
 """
-DealHunter — Módulo de Scraping
+Crivo — Módulo de Scraping
 Coleta ofertas do Mercado Livre com técnicas de anti-bloqueio.
 """
 

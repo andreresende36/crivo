@@ -1,5 +1,5 @@
 """
-DealHunter — Admin API Router
+Crivo — Admin API Router
 Endpoints para CRUD de ofertas, gerenciamento de fila, envio manual e scraping.
 
 Autenticação: valida JWT do Supabase Auth via header Authorization: Bearer <token>.
@@ -228,7 +228,7 @@ async def send_now(
     _user: dict = Depends(_verify_supabase_jwt),
 ):
     """Envia a próxima oferta da fila imediatamente."""
-    from src.sender import send_next_offer
+    from src.distributor.sender import send_next_offer
 
     async with StorageManager() as storage:
         sent = await send_next_offer(storage)
@@ -243,7 +243,7 @@ async def send_specific_offer(
     _user: dict = Depends(_verify_supabase_jwt),
 ):
     """Fixa uma oferta no topo e envia imediatamente."""
-    from src.sender import send_next_offer
+    from src.distributor.sender import send_next_offer
 
     async with StorageManager() as storage:
         await _update_scored_offer(storage, offer_id, queue_priority=9999)

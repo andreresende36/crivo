@@ -1,5 +1,5 @@
 """
-DealHunter — Message Formatter (Style Guide v3)
+Crivo — Message Formatter (Style Guide v3)
 Gera mensagens formatadas para WhatsApp e Telegram.
 Template baseado na análise de 2.104 mensagens do grupo Sempre Black.
 """

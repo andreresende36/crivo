@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DealHunter — Reset Databases Script
+Crivo — Reset Databases Script
 Limpa todas as tabelas mantendo o schema intacto.
 
 Uso:
@@ -162,7 +162,7 @@ async def clear_supabase_storage(bucket: str = "images", folder: str = "products
 async def main(include_supabase: bool = False, clear_storage: bool = False) -> None:
     """Executa o reset."""
     print("\n" + "=" * 70)
-    print("DealHunter — Reset Databases (Opção A: Truncate)")
+    print("Crivo — Reset Databases (Opção A: Truncate)")
     print("=" * 70)
     print(f"\n📋 Tabelas a truncar: {', '.join(TABLES_TO_TRUNCATE)}")
     print(f"🔒 Schema será PRESERVADO\n")
@@ -217,7 +217,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Reset DealHunter databases (truncate mode)"
+        description="Reset Crivo databases (truncate mode)"
     )
     parser.add_argument(
         "--truncate",

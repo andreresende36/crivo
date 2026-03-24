@@ -1,5 +1,5 @@
 """
-DealHunter — Unified Brand Registry
+Crivo — Unified Brand Registry
 Central list of known brands, pre-compiled regex, and extraction helper.
 
 Used by: message_formatter, title_generator, score_engine, product_image_selector.

@@ -1,5 +1,5 @@
 """
-DealHunter — Mercado Livre Affiliate API Client
+Crivo — Mercado Livre Affiliate API Client
 Gera links de afiliado oficiais via API interna do ML.
 
 A API requer cookies de sessao do navegador (nao ha API publica).

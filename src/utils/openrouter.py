@@ -1,5 +1,5 @@
 """
-DealHunter — OpenRouter API Utilities
+Crivo — OpenRouter API Utilities
 Shared constants, headers builder, call wrapper, and JSON parse helper.
 
 Used by: title_generator, product_image_selector.
@@ -30,8 +30,8 @@ def openrouter_headers(api_key: str | None = None) -> dict[str, str]:
     return {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {key}",
-        "HTTP-Referer": "https://dealhunter.ai",
-        "X-Title": "DealHunter",
+        "HTTP-Referer": "https://crivo.ai",
+        "X-Title": "Crivo",
     }
 
 

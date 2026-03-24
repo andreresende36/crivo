@@ -1,5 +1,5 @@
 """
-DealHunter — Módulo de Monitoramento
+Crivo — Módulo de Monitoramento
 Health checks e alertas operacionais.
 """
 

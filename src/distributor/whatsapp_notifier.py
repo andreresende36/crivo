@@ -1,5 +1,5 @@
 """
-DealHunter — WhatsApp Notifier
+Crivo — WhatsApp Notifier
 Publica ofertas nos grupos WhatsApp via Evolution API.
 Documentação: https://doc.evolution-api.com/v2/pt/send-message/send-text
 

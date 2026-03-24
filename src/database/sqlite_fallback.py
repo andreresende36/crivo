@@ -1,5 +1,5 @@
 """
-DealHunter — SQLite Fallback
+Crivo — SQLite Fallback
 Banco de dados local espelho do Supabase.
 
 Funciona como:

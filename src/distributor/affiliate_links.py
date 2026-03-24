@@ -1,5 +1,5 @@
 """
-DealHunter — Affiliate Link Builder
+Crivo — Affiliate Link Builder
 Gera links de afiliado oficiais do Mercado Livre via API createLink.
 
 Fluxo:

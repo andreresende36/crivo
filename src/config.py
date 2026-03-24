@@ -1,5 +1,5 @@
 """
-DealHunter - Configuração Central
+Crivo - Configuração Central
 Lê todas as variáveis de ambiente e expõe configurações tipadas para o sistema.
 """
 
@@ -68,7 +68,7 @@ class WhatsAppConfig:
     api_url: str = field(default_factory=lambda: os.getenv("WHATSAPP_API_URL", ""))
     api_key: str = field(default_factory=lambda: os.getenv("WHATSAPP_API_KEY", ""))
     instance_name: str = field(
-        default_factory=lambda: os.getenv("WHATSAPP_INSTANCE_NAME", "dealhunter")
+        default_factory=lambda: os.getenv("WHATSAPP_INSTANCE_NAME", "crivo")
     )
     # Números/grupos destino separados por vírgula
     group_ids: list[str] = field(
@@ -108,7 +108,7 @@ class MercadoLivreConfig:
     csrf_token: str = field(
         default_factory=lambda: os.getenv("ML_CSRF_TOKEN", "")
     )
-    # Credenciais do usuário DealHunter (temporário — via .env)
+    # Credenciais do usuário Crivo (temporário — via .env)
     user_name: str = field(
         default_factory=lambda: os.getenv("ML_USER_NAME", "")
     )
@@ -294,7 +294,7 @@ class TitleReviewConfig:
 class SQLiteConfig:
     db_path: Path = field(
         default_factory=lambda: Path(
-            os.getenv("SQLITE_DB_PATH", str(ROOT_DIR / "data" / "dealhunter.db"))
+            os.getenv("SQLITE_DB_PATH", str(ROOT_DIR / "data" / "crivo.db"))
         )
     )
 

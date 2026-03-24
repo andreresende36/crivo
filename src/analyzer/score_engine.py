@@ -1,5 +1,5 @@
 """
-DealHunter — Score Engine v2
+Crivo — Score Engine v2
 Sistema de pontuacao por regras com redistribuicao dinamica de pesos.
 Pontuacao de 0 a 100. Ofertas abaixo do minimo sao descartadas.
 

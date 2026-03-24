@@ -1,5 +1,5 @@
 -- =============================================================================
--- DealHunter — Migration: initial_schema
+-- Crivo — Migration: initial_schema
 -- Versão: 20260303015832
 --
 -- Schema inicial do sistema com 5 tabelas principais,

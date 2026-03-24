@@ -1,5 +1,5 @@
 """
-DealHunter — Title Review Bot
+Crivo — Title Review Bot
 Bot interativo de Telegram para revisão de títulos pelo admin.
 
 Fluxo:

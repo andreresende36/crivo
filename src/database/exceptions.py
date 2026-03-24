@@ -1,5 +1,5 @@
 """
-DealHunter — Exceções do módulo de banco de dados.
+Crivo — Exceções do módulo de banco de dados.
 
 Hierarquia:
     StorageError

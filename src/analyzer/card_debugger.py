@@ -1,5 +1,5 @@
 """
-DealHunter — Card Debugger
+Crivo — Card Debugger
 Gera relatório HTML com screenshots dos cards rejeitados pelo Score Engine.
 
 Uso (chamado automaticamente em main.py quando SCRAPER_DEBUG_SCREENSHOTS=true):
@@ -165,7 +165,7 @@ def generate_report(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DealHunter — Rejeitados {run_label}</title>
+<title>Crivo — Rejeitados {run_label}</title>
 <style>{_CSS}</style>
 </head>
 <body>

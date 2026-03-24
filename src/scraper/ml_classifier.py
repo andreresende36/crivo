@@ -6,7 +6,7 @@ import httpx
 import structlog
 
 from src.config import settings
-from src.prompts_loader import load_prompt
+from src.utils.prompts_loader import load_prompt
 
 _CLASSIFIER_USER_TEMPLATE = load_prompt("classifier_user")
 
@@ -530,8 +530,8 @@ async def classify_with_ai(title: str) -> str:
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
-                    "HTTP-Referer": "https://dealhunter.ai",  # Optional
-                    "X-Title": "DealHunter",  # Optional
+                    "HTTP-Referer": "https://crivo.ai",  # Optional
+                    "X-Title": "Crivo",  # Optional
                 },
                 json={
                     "model": "google/gemini-2.5-flash",  # Fast and extremely cheap

@@ -1,5 +1,5 @@
 """
-DealHunter — Pipeline de Scraping
+Crivo — Pipeline de Scraping
 Coleta ofertas do Mercado Livre, pontua, salva no banco.
 
 Fluxo: scraping cards → dedup → fake filter → score → save → affiliate links.
@@ -25,7 +25,7 @@ logger = structlog.get_logger(__name__)
 
 async def run_pipeline(storage: StorageManager) -> dict:
     """
-    Executa o pipeline de scraping do DealHunter.
+    Executa o pipeline de scraping do Crivo.
 
     Coleta ofertas dos cards de listagem, filtra duplicatas e descontos falsos,
     pontua e salva no banco. O envio é feito separadamente pelo sender.

@@ -1,5 +1,5 @@
 -- =============================================================================
--- DealHunter — Migration: drop_enrichment_columns
+-- Crivo — Migration: drop_enrichment_columns
 -- Versão: 20260306022612
 --
 -- Remove colunas do deep scrape worker (descontinuado):

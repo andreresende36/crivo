@@ -1,5 +1,5 @@
 """
-DealHunter — Base Scraper
+Crivo — Base Scraper
 Classe abstrata com todas as técnicas de anti-bloqueio para o Mercado Livre.
 Subclasses devem implementar apenas o método `scrape()`.
 """
@@ -162,7 +162,7 @@ class RateLimitError(Exception):
 
 class BaseScraper(ABC):
     """
-    Classe base para todos os scrapers do DealHunter.
+    Classe base para todos os scrapers do Crivo.
 
     Fornece:
     - Rotação de User-Agent

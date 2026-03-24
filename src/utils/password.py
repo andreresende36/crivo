@@ -1,5 +1,5 @@
 """
-DealHunter — Utilitários de senha
+Crivo — Utilitários de senha
 Hashing com bcrypt (salt automático, fator de custo 12).
 """
 

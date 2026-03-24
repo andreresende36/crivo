@@ -1,5 +1,5 @@
 """
-DealHunter — Lifestyle Image Generator
+Crivo — Lifestyle Image Generator
 Pipeline de 2 passos para transformar thumbnail de produto em imagem lifestyle.
 Tudo via OpenRouter.
 
@@ -21,7 +21,7 @@ import httpx
 import structlog
 
 from src.config import settings
-from src.prompts_loader import load_prompt
+from src.utils.prompts_loader import load_prompt
 
 logger = structlog.get_logger(__name__)
 
@@ -31,8 +31,8 @@ logger = structlog.get_logger(__name__)
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_HEADERS_BASE = {
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://dealhunter.ai",
-    "X-Title": "DealHunter",
+    "HTTP-Referer": "https://crivo.ai",
+    "X-Title": "Crivo",
 }
 
 HAIKU_MODEL = "anthropic/claude-haiku-4-5"

@@ -51,7 +51,16 @@ class TestMessageFormatter:
         assert "299" in msg.whatsapp_text
         assert "599" in msg.whatsapp_text
 
-    def test_contains_discount_pct(self, formatter, sample_product):
+    def test_contains_discount_info(self, formatter, sample_product):
+        msg = formatter.format(sample_product, short_link="https://s.black/abc")
+        # Produto com savings > 0 usa "💸 Desconto de R$" ao invés de "📉 % OFF"
+        assert "💸" in msg.whatsapp_text
+        assert "Desconto de R$" in msg.whatsapp_text
+
+    def test_contains_pct_off_when_no_savings(self, formatter, sample_product):
+        # Quando original_price == price, usa "📉 XX% OFF"
+        sample_product.original_price = sample_product.price
+        sample_product.discount_pct = 30.0
         msg = formatter.format(sample_product, short_link="https://s.black/abc")
         assert "📉" in msg.whatsapp_text
         assert "% OFF" in msg.whatsapp_text
@@ -122,10 +131,17 @@ class TestMessageFormatter:
 
     def test_catchy_title_fallback(self, formatter, sample_product):
         msg = formatter.format(sample_product, short_link="https://s.black/abc")
-        first_line = msg.whatsapp_text.split("\n")[0]
-        assert first_line.startswith("*")
-        assert first_line.endswith("*")
-        title = first_line.strip("*")
+        lines = msg.whatsapp_text.split("\n")
+        # Encontra a linha do título catchy (formato *TITULO*)
+        # Pode haver flash sale tag antes, então procura pela primeira linha bold
+        # que não seja a tag de urgência
+        title_line = None
+        for line in lines:
+            if line.startswith("*") and line.endswith("*") and "Promoção" not in line:
+                title_line = line
+                break
+        assert title_line is not None, "Título catchy não encontrado"
+        title = title_line.strip("*")
         assert title == title.upper()
 
     def test_product_name_full(self, formatter, sample_product):

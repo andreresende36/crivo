@@ -1,5 +1,5 @@
 -- =============================================================================
--- DealHunter — Migration: add_enrichment_columns_to_products
+-- Crivo — Migration: add_enrichment_columns_to_products
 -- Versão: 20260303223240
 --
 -- Adiciona colunas de enriquecimento para o deep scrape worker.

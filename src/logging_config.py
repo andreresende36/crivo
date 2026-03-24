@@ -1,5 +1,5 @@
 """
-DealHunter — Configuração de Logging
+Crivo — Configuração de Logging
 Setup centralizado do structlog com redação de dados sensíveis
 e formatação visual rica para o console (desenvolvimento).
 
@@ -350,9 +350,9 @@ def _render_product_rejected(ts: str, kv: dict) -> str:
     return f"{ts}  " + "\n".join(lines)
 
 
-def _dealhunter_renderer(logger, method_name, event_dict):
+def _crivo_renderer(logger, method_name, event_dict):
     """
-    Renderer customizado do DealHunter para o console.
+    Renderer customizado do Crivo para o console.
     Formata eventos com emojis, cores e banners visuais.
     """
     # Extrai campos de controle do structlog
@@ -420,7 +420,7 @@ def setup_logging() -> None:
 
     if is_tty:
         # Terminal interativo → renderer visual rico + filtro de DB noise
-        renderer = _dealhunter_renderer
+        renderer = _crivo_renderer
         processors = [
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.add_log_level,

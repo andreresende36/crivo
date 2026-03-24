@@ -1,5 +1,5 @@
 """
-DealHunter — Image Storage
+Crivo — Image Storage
 Upload e recuperação de imagens aprimoradas via Supabase Storage.
 """
 

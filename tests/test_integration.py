@@ -1,5 +1,5 @@
 """
-Testes de integração do DealHunter.
+Testes de integração do Crivo.
 
 Testa o pipeline completo (storage, score, formatação, affiliate links)
 usando SQLite real em memória e mocks para serviços externos.
@@ -15,7 +15,6 @@ from src.scraper.base_scraper import ScrapedProduct
 from src.analyzer.score_engine import ScoreEngine
 from src.analyzer.fake_discount_detector import FakeDiscountDetector
 from src.distributor.message_formatter import MessageFormatter
-from src.distributor.affiliate_links import AffiliateLinkBuilder
 from src.database.sqlite_fallback import SQLiteFallback
 from src.database.storage_manager import StorageManager
 from src.database.exceptions import SupabaseError
@@ -100,13 +99,6 @@ def mock_settings():
         yield mock
 
 
-@pytest.fixture
-def mock_affiliate_settings():
-    with patch("src.distributor.affiliate_links.settings") as mock:
-        mock.mercado_livre.affiliate_tag = "sempreblack"
-        yield mock
-
-
 # ---------------------------------------------------------------------------
 # Teste: Pipeline Score → Fake Detection → Formatação
 # ---------------------------------------------------------------------------
@@ -116,12 +108,11 @@ class TestScoreToFormatPipeline:
     """Testa o fluxo análise → detecção de fraude → formatação."""
 
     def test_good_product_flows_through(
-        self, mock_settings, mock_affiliate_settings, good_product
+        self, mock_settings, good_product
     ):
         engine = ScoreEngine()
         detector = FakeDiscountDetector()
         formatter = MessageFormatter()
-        affiliate = AffiliateLinkBuilder()
 
         # 1. Fake detection
         fake_result = detector.check(good_product)
@@ -132,12 +123,7 @@ class TestScoreToFormatPipeline:
         assert scored.passed is True
         assert scored.score >= 60
 
-        # 3. Affiliate URL
-        aff_url = affiliate.build(good_product.url)
-        assert "matt_tool" in aff_url
-        assert "matt_affiliate" in aff_url
-
-        # 4. Formatação
+        # 3. Formatação
         msg = formatter.format(good_product, short_link="https://s.black/abc")
         assert msg.telegram_text
         assert msg.whatsapp_text
@@ -209,7 +195,7 @@ class TestSQLiteFallbackIntegration:
         assert offer_id is not None
 
         # 7. Marcar como enviado
-        ok = await sqlite_db.mark_as_sent(offer_id, "telegram", "https://s.black/abc")
+        ok = await sqlite_db.mark_as_sent(offer_id, "telegram")
         assert ok is True
 
         # 8. Verificar envio recente

@@ -1,5 +1,5 @@
 """
-DealHunter — Dados de Seed (Fonte Única de Verdade)
+Crivo — Dados de Seed (Fonte Única de Verdade)
 
 Define os marketplaces, badges e categorias canônicos que devem existir
 em TODOS os ambientes (Supabase e SQLite). Usados durante a inicialização

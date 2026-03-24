@@ -1,1 +1,1 @@
-"""DealHunter — Image Enhancement Module."""
+"""Crivo — Image Enhancement Module."""

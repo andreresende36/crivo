@@ -1,5 +1,5 @@
 """
-DealHunter — Telegram Bot
+Crivo — Telegram Bot
 Publica ofertas nos grupos "Sempre Black" via Telegram Bot API.
 Biblioteca: python-telegram-bot v21 (async)
 """
@@ -179,7 +179,7 @@ class TelegramBot:
         try:
             await self.bot.send_message(
                 chat_id=target,
-                text=f"⚠️ *DealHunter Alert*\n\n{text}",
+                text=f"⚠️ *Crivo Alert*\n\n{text}",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return True

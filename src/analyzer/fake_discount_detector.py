@@ -1,5 +1,5 @@
 """
-DealHunter — Detector de Desconto Falso
+Crivo — Detector de Desconto Falso
 Identifica práticas comuns de inflação de preço antes do desconto no ML.
 
 Estratégias detectadas:

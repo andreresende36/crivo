@@ -1,5 +1,5 @@
 """
-Testes para o Score Engine v2 do DealHunter.
+Testes para o Score Engine v2 do Crivo.
 
 Cobre:
 - Hard filters (7 testes)

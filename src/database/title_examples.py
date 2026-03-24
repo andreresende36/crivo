@@ -1,5 +1,5 @@
 """
-DealHunter — Title Examples
+Crivo — Title Examples
 Dataclasses para o sistema de feedback de títulos.
 """
 

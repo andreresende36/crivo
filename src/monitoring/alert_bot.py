@@ -1,5 +1,5 @@
 """
-DealHunter — Alert Bot
+Crivo — Alert Bot
 Envia alertas críticos via Telegram para o admin.
 Usado quando há falhas, erros inesperados ou limites atingidos.
 """
@@ -63,7 +63,7 @@ class AlertBot:
             return False
 
         icon = SEVERITY_ICONS.get(severity, "ℹ️")
-        text = f"{icon} *DealHunter — {severity.upper()}*\n\n{message}"
+        text = f"{icon} *Crivo — {severity.upper()}*\n\n{message}"
 
         if details:
             detail_lines = "\n".join(f"• `{k}`: {v}" for k, v in details.items())

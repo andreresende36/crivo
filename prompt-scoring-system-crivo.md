@@ -1,8 +1,8 @@
-# Prompt: Implementar Sistema de Scoring de Ofertas do Mercado Livre (DealFlow Bot)
+# Prompt: Implementar Sistema de Scoring de Ofertas do Mercado Livre (Garimpou Bot)
 
 ## Contexto do Projeto
 
-Este módulo faz parte do **DealFlow Bot**, um sistema de automação que faz scraping de ofertas do Mercado Livre e posta as melhores no WhatsApp com links de afiliado. O módulo de scoring é responsável por atribuir uma **nota de 0 a 100** a cada oferta, permitindo ranquear e filtrar as melhores deals antes de publicar.
+Este módulo faz parte do **Garimpou Bot**, um sistema de automação que faz scraping de ofertas do Mercado Livre e posta as melhores no WhatsApp com links de afiliado. O módulo de scoring é responsável por atribuir uma **nota de 0 a 100** a cada oferta, permitindo ranquear e filtrar as melhores deals antes de publicar.
 
 O sistema precisa ser implementado em **duas versões**:
 1. **Módulo Python** (para uso standalone, testes e integração com scripts)
@@ -443,7 +443,7 @@ Cada oferta processada deve retornar um objeto com o seguinte formato:
 ## Arquivos a serem criados
 
 ```
-dealflow-scoring/
+garimpou-scoring/
 ├── python/
 │   ├── deal_scorer.py        # Módulo principal
 │   ├── test_deal_scorer.py   # Testes com pytest

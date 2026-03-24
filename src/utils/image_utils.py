@@ -1,5 +1,5 @@
 """
-DealHunter — Image Utilities
+Crivo — Image Utilities
 Shared image processing helpers for validation pipelines.
 
 Used by: product_image_selector.
