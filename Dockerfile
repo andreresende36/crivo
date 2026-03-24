@@ -7,8 +7,8 @@
 FROM python:3.11-slim-bookworm
 
 # Metadados
-LABEL maintainer="Crivo <contato@sempreblack.com.br>"
-LABEL description="Sistema automatizado de caça de ofertas — Sempre Black"
+LABEL maintainer="Crivo <[EMAIL_ADDRESS]>"
+LABEL description="Sistema automatizado de busca de ofertas — Crivo"
 
 # Variáveis de build
 ENV PYTHONDONTWRITEBYTECODE=1 \

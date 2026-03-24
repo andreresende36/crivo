@@ -5,7 +5,7 @@
 # =============================================================================
 
 networks:
-  crivo_net:
+  net:
     driver: bridge
 
 volumes:
@@ -30,7 +30,7 @@ services:
       - ./src:/app/src:ro
       - ./logs:/app/logs
     networks:
-      - crivo_net
+      - net
     environment:
       - APP_ENV=${APP_ENV:-development}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -58,7 +58,7 @@ services:
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - NEXT_PUBLIC_API_URL=http://app:8000
     networks:
-      - crivo_net
+      - net
     depends_on:
       - app
 
