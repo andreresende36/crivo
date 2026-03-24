@@ -70,7 +70,7 @@ SELECTORS = {
     ),
     # Link do produto
     "link": (
-        "a.poly-component__title, " "a.ui-search-link, " "a[href*='mercadolivre']"
+        "a.poly-component__title, a.ui-search-link, a[href*='mercadolivre']"
     ),
     # Preço atual — container andes (fraction + cents)
     "price_current_container": ".poly-price__current",
@@ -110,15 +110,15 @@ SELECTORS = {
         "img[data-src]"
     ),
     # Avaliação e reviews (poly- + ui-search- fallbacks)
-    "rating": (".poly-reviews__rating, " "span.ui-search-reviews__rating-number"),
-    "review_count": (".poly-reviews__total, " "span.ui-search-reviews__amount"),
+    "rating": ".poly-reviews__rating, span.ui-search-reviews__rating-number",
+    "review_count": ".poly-reviews__total, span.ui-search-reviews__amount",
     # Parcelamento
     "installments": ".poly-price__installments",
     # Badges
     "badge": "span.poly-component__highlight",
     # Paginação (link-based)
     "next_page": (
-        "a.andes-pagination__link--next, " "li.andes-pagination__button--next a"
+        "a.andes-pagination__link--next, li.andes-pagination__button--next a"
     ),
     "pagination_links": "a.andes-pagination__link",
 }
@@ -291,7 +291,7 @@ class MLScraper(BaseScraper):
         products: list[ScrapedProduct] = []
         dupes_skipped = 0
         parse_errors = 0
-        url = self._build_url(source, page_num=1)
+        url = self._build_url(source, 1)
 
         for page_num in range(1, source.max_pages + 1):
             logger.info(
@@ -312,7 +312,7 @@ class MLScraper(BaseScraper):
             # Aguarda os cards carregarem
             try:
                 await page.wait_for_selector(
-                    "div.poly-card, li.promotion-item, " "li.ui-search-layout__item",
+                    "div.poly-card, li.promotion-item, li.ui-search-layout__item",
                     timeout=15_000,
                 )
             except Exception:
@@ -343,38 +343,9 @@ class MLScraper(BaseScraper):
             page_products = await self._enrich_categories_with_ai(page_products)
 
             # Dedup + persistência batch (3 queries ao invés de N×3)
-            if self._storage and page_products:
-                try:
-                    # 1 query: quais ml_ids já existem?
-                    existing = await self._storage.check_duplicates_batch(
-                        [p.ml_id for p in page_products]
-                    )
-                    dupes_skipped += len(existing)
-                    new_products = [p for p in page_products if p.ml_id not in existing]
-
-                    if new_products:
-                        # 1 upsert para todos os novos
-                        ids = await self._storage.upsert_products_batch(new_products)
-
-                        # 1 insert para todo o histórico de preço
-                        entries = [
-                            {
-                                "product_id": ids[p.ml_id],
-                                "price": p.price,
-                                "original_price": p.original_price,
-                            }
-                            for p in new_products
-                            if p.ml_id in ids
-                        ]
-                        await self._storage.add_price_history_batch(entries)
-
-                    products.extend(new_products)
-                except Exception as exc:
-                    logger.warning("storage_batch_error", error=str(exc))
-                    # Fallback: adiciona todos mesmo se storage falhou
-                    products.extend(page_products)
-            else:
-                products.extend(page_products)
+            new_products, page_dupes = await self._save_page_products_batch(page_products)
+            products.extend(new_products)
+            dupes_skipped += page_dupes
 
             if not page_products:
                 break
@@ -393,6 +364,41 @@ class MLScraper(BaseScraper):
             await self._random_delay()
 
         return products, dupes_skipped, parse_errors
+
+    async def _save_page_products_batch(
+        self, page_products: list[ScrapedProduct]
+    ) -> tuple[list[ScrapedProduct], int]:
+        """
+        Deduplica e persiste produtos de uma página em batch.
+        Retorna (new_products, dupes_skipped).
+        """
+        if not self._storage or not page_products:
+            return page_products, 0
+
+        try:
+            existing = await self._storage.check_duplicates_batch(
+                [p.ml_id for p in page_products]
+            )
+            dupes = len(existing)
+            new_products = [p for p in page_products if p.ml_id not in existing]
+
+            if new_products:
+                ids = await self._storage.upsert_products_batch(new_products)
+                entries = [
+                    {
+                        "product_id": ids[p.ml_id],
+                        "price": p.price,
+                        "original_price": p.original_price,
+                    }
+                    for p in new_products
+                    if p.ml_id in ids
+                ]
+                await self._storage.add_price_history_batch(entries)
+
+            return new_products, dupes
+        except Exception as exc:
+            logger.warning("storage_batch_error", error=str(exc))
+            return page_products, 0
 
     async def _enrich_categories_with_ai(
         self, products: list[ScrapedProduct]
@@ -422,15 +428,15 @@ class MLScraper(BaseScraper):
     # Paginação
     # ------------------------------------------------------------------
 
-    def _build_url(self, source: ScrapeSource, page_num: int) -> str:
+    def _build_url(self, source: ScrapeSource, _page_num: int) -> str:
         """Constrói URL para a página solicitada."""
         return source.url
 
     async def _resolve_next_page(
         self,
         page: Page,
-        source: ScrapeSource,
-        current_page: int,
+        _source: ScrapeSource,
+        _current_page: int,
     ) -> str | None:
         """Resolve URL da próxima página via link."""
         return await self._get_next_page_url(page)
@@ -541,6 +547,26 @@ class MLScraper(BaseScraper):
 
         return products
 
+    def _parse_free_shipping(self, item: Tag) -> bool:
+        tag = item.select_one(SELECTORS["shipping"])
+        if tag:
+            text = tag.get_text(strip=True).lower()
+            return "grátis" in text or "gratis" in text
+        return False
+
+    def _parse_installments(self, item: Tag) -> bool:
+        tag = item.select_one(SELECTORS["installments"])
+        if tag:
+            text = tag.get_text(strip=True).lower()
+            return "sem juros" in text or "sin interés" in text
+        return False
+
+    def _parse_image_url(self, item: Tag) -> str:
+        img_tag = item.select_one(SELECTORS["image"])
+        if img_tag:
+            return str(img_tag.get("data-src") or img_tag.get("src") or "")
+        return ""
+
     def _parse_item(self, item: Tag, source: ScrapeSource) -> Optional[ScrapedProduct]:
         """
         Extrai TODOS os campos de um card de produto.
@@ -591,26 +617,13 @@ class MLScraper(BaseScraper):
             review_count = self._parse_review_count(item)
 
             # --- Frete grátis ---
-            shipping_tag = item.select_one(SELECTORS["shipping"])
-            free_shipping = False
-            if shipping_tag:
-                text = shipping_tag.get_text(strip=True).lower()
-                free_shipping = "grátis" in text or "gratis" in text
+            free_shipping = self._parse_free_shipping(item)
 
             # --- Parcelamento sem juros ---
-            installments_tag = item.select_one(SELECTORS["installments"])
-            installments_without_interest = False
-            if installments_tag:
-                text = installments_tag.get_text(strip=True).lower()
-                installments_without_interest = (
-                    "sem juros" in text or "sin interés" in text
-                )
+            installments_without_interest = self._parse_installments(item)
 
             # --- Imagem ---
-            img_tag = item.select_one(SELECTORS["image"])
-            image_url = ""
-            if img_tag:
-                image_url = str(img_tag.get("data-src") or img_tag.get("src") or "")
+            image_url = self._parse_image_url(item)
 
             # --- Badge ---
             badge_tag = item.select_one(SELECTORS["badge"])

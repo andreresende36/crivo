@@ -93,10 +93,7 @@ async def _select_and_upload_image(
     storage: StorageManager,
     product_id: str,
     ml_id: str,
-    product_title: str,
     thumbnail_url: str,
-    category: str,
-    product_url: str = "",
     force_new: bool = False,
 ) -> tuple[str | None, bytes | None]:
     """
@@ -149,6 +146,166 @@ async def _select_and_upload_image(
 
 
 # ---------------------------------------------------------------------------
+# Helpers de envio
+# ---------------------------------------------------------------------------
+
+
+async def _get_affiliate_url(
+    storage: StorageManager,
+    offer: UnsentOfferRow,
+    product_id: str,
+    ml_id: str,
+) -> str:
+    """Obtém ou cria link de afiliado; retorna URL original como fallback."""
+    short_url = offer["product_url"]
+    try:
+        ml_cfg = settings.mercado_livre
+        user_id = await storage.get_or_create_user(
+            name=ml_cfg.user_name or ml_cfg.affiliate_tag,
+            affiliate_tag=ml_cfg.affiliate_tag,
+            email=ml_cfg.user_email or None,
+            password=ml_cfg.user_password or None,
+        )
+        if user_id:
+            aff_builder = AffiliateLinkBuilder(storage, user_id=user_id)
+            aff_url = await aff_builder.get_or_create(offer["product_url"], product_id)
+            short_url = aff_url or offer["product_url"]
+    except Exception as exc:
+        logger.warning("affiliate_link_failed", ml_id=ml_id, error=str(exc))
+    return short_url
+
+
+async def _load_title_examples(storage: StorageManager) -> list:
+    """Carrega exemplos few-shot de títulos aprovados (se review habilitado)."""
+    from src.database.title_examples import TitleExample
+
+    if not settings.title_review.enabled:
+        return []
+    try:
+        raw_examples = await storage.get_recent_title_examples(
+            limit=settings.title_review.examples_in_prompt
+        )
+        if raw_examples:
+            examples = [TitleExample.from_dict(e) for e in raw_examples]
+            logger.debug("title_examples_loaded", count=len(examples))
+            return examples
+    except Exception as exc:
+        logger.warning("title_examples_load_failed", error=str(exc))
+    return []
+
+
+async def _run_title_review(
+    title_review_bot: TitleReviewBot,
+    catchy_title: str,
+    storage: StorageManager,
+    scored_offer_id: str,
+    offer: UnsentOfferRow,
+    title_examples: list,
+) -> tuple[str | None, bool]:
+    """
+    Executa o loop de revisão de título pelo admin via Telegram.
+
+    Returns:
+        (título_final, deve_abortar). Se deve_abortar=True, a oferta foi
+        revertida para pending e o envio deve ser cancelado.
+    """
+    from src.distributor.title_generator import generate_catchy_title
+    from src.database.title_examples import TitleExampleData
+
+    product_title = offer["title"]
+    category = offer.get("category") or ""
+    current_price = float(offer["current_price"])
+    original_price_val = float(offer["original_price"]) if offer.get("original_price") else None
+    discount_pct = float(offer.get("discount_percent") or 0)
+    max_regen = settings.title_review.max_regenerations
+    result = None
+
+    for attempt in range(max_regen + 1):
+        result = await title_review_bot.request_review(
+            product_title=product_title,
+            category=category,
+            price=current_price,
+            discount_pct=discount_pct,
+            generated_title=catchy_title,
+        )
+
+        if result.action in ("approved", "edited"):
+            catchy_title = result.final_title
+            break
+        if result.action == "timeout":
+            logger.warning("title_review_timeout_reverting", ml_id=offer["ml_id"])
+            await storage.revert_to_pending(scored_offer_id)
+            return None, True
+        if result.action == "rejected" and attempt < max_regen:
+            logger.info("title_rejected_regenerating", attempt=attempt + 1, max=max_regen)
+            try:
+                catchy_title = await generate_catchy_title(
+                    product_title=product_title,
+                    category=category,
+                    price=current_price,
+                    original_price=original_price_val,
+                    examples=title_examples,
+                )
+                continue  # regenerated successfully; request review again
+            except Exception:
+                pass  # fall through to break
+        else:
+            logger.warning("title_max_rejections_reached", ml_id=offer["ml_id"])
+        break
+
+    if result and result.action != "rejected":
+        try:
+            example_data = TitleExampleData(
+                product_title=product_title,
+                generated_title=result.generated_title,
+                final_title=catchy_title or result.final_title,
+                action=result.action,
+                category=category,
+                price=current_price,
+                scored_offer_id=scored_offer_id,
+            )
+            await storage.save_title_example(example_data.to_dict())
+            logger.info("title_example_saved", action=result.action, title=catchy_title)
+        except Exception as exc:
+            logger.warning("title_example_save_failed", error=str(exc))
+
+    return catchy_title, False
+
+
+async def _publish_telegram(
+    bot: TelegramBot,
+    msg: Any,
+    storage: StorageManager,
+    scored_offer_id: str,
+    ml_id: str,
+    offer: UnsentOfferRow,
+    short_url: str,
+    catchy_title: str | None,
+    enhanced_image_url: str | None,
+) -> bool:
+    """Publica mensagem no Telegram e marca a oferta como enviada."""
+    results = await bot.publish(msg)
+    sent_ok = any(r["success"] for r in results)
+
+    if sent_ok:
+        try:
+            await storage.mark_as_sent(scored_offer_id, channel="telegram")
+        except Exception as exc:
+            logger.warning("mark_as_sent_failed", ml_id=ml_id, error=str(exc))
+        logger.info(
+            "offer_sent",
+            ml_id=ml_id,
+            score=offer["final_score"],
+            image_source=enhanced_image_url is not None,
+            catchy_title=catchy_title or "(fallback)",
+            link=short_url[:60],
+        )
+    else:
+        logger.error("offer_send_failed", ml_id=ml_id, results=results)
+    return sent_ok
+
+
+# ---------------------------------------------------------------------------
 # Interface pública
 # ---------------------------------------------------------------------------
 
@@ -183,58 +340,21 @@ async def send_next_offer(
     product_title = offer["title"]
     category = offer.get("category") or ""
 
-    logger.info(
-        "sending_offer",
-        ml_id=ml_id,
-        title=product_title[:50],
-        score=offer["final_score"],
-    )
+    logger.info("sending_offer", ml_id=ml_id, title=product_title[:50], score=offer["final_score"])
 
-    # 1. Link de afiliado (não muda entre tentativas)
-    short_url = offer["product_url"]
-    try:
-        ml_cfg = settings.mercado_livre
-        user_id = await storage.get_or_create_user(
-            name=ml_cfg.user_name or ml_cfg.affiliate_tag,
-            affiliate_tag=ml_cfg.affiliate_tag,
-            email=ml_cfg.user_email or None,
-            password=ml_cfg.user_password or None,
-        )
-        if user_id:
-            aff_builder = AffiliateLinkBuilder(storage, user_id=user_id)
-            aff_url = await aff_builder.get_or_create(
-                offer["product_url"], product_id
-            )
-            short_url = aff_url or offer["product_url"]
-    except Exception as exc:
-        logger.warning("affiliate_link_failed", ml_id=ml_id, error=str(exc))
+    # 1. Link de afiliado
+    short_url = await _get_affiliate_url(storage, offer, product_id, ml_id)
 
     product = _offer_to_product(offer)
     formatter = MessageFormatter()
 
     from src.distributor.title_generator import generate_catchy_title
-    from src.database.title_examples import TitleExample, TitleExampleData
 
-    # 2. Carregar exemplos few-shot aprovados (se review habilitado)
-    title_examples: list[TitleExample] | None = None
-    if settings.title_review.enabled:
-        try:
-            raw_examples = await storage.get_recent_title_examples(
-                limit=settings.title_review.examples_in_prompt
-            )
-            if raw_examples:
-                title_examples = [TitleExample.from_dict(e) for e in raw_examples]
-                logger.debug("title_examples_loaded", count=len(title_examples))
-        except Exception as exc:
-            logger.warning("title_examples_load_failed", error=str(exc))
-
-    # 3. Gerar título catchy via IA (se disponível)
+    # 2. Carregar exemplos few-shot + 3. Gerar título catchy via IA
+    title_examples = await _load_title_examples(storage)
     catchy_title: str | None = None
     current_price = float(offer["current_price"])
-    original_price_val = (
-        float(offer["original_price"]) if offer.get("original_price") else None
-    )
-    discount_pct = float(offer.get("discount_percent") or 0)
+    original_price_val = float(offer["original_price"]) if offer.get("original_price") else None
 
     if settings.openrouter.api_key:
         try:
@@ -249,81 +369,18 @@ async def send_next_offer(
             logger.warning("title_generation_failed", ml_id=ml_id, error=str(exc))
 
     # 4. Review de título pelo admin (se habilitado)
-    if (
-        catchy_title
-        and settings.title_review.enabled
-        and title_review_bot
-    ):
-        max_regen = settings.title_review.max_regenerations
-        for attempt in range(max_regen + 1):
-            result = await title_review_bot.request_review(
-                product_title=product_title,
-                category=category,
-                price=current_price,
-                discount_pct=discount_pct,
-                generated_title=catchy_title,
-            )
-
-            if result.action == "approved":
-                catchy_title = result.final_title
-                break
-            elif result.action == "edited":
-                catchy_title = result.final_title
-                break
-            elif result.action == "timeout":
-                logger.warning("title_review_timeout_reverting", ml_id=ml_id)
-                await storage.revert_to_pending(scored_offer_id)
-                return False
-            elif result.action == "rejected":
-                if attempt < max_regen:
-                    logger.info(
-                        "title_rejected_regenerating",
-                        attempt=attempt + 1,
-                        max=max_regen,
-                    )
-                    try:
-                        catchy_title = await generate_catchy_title(
-                            product_title=product_title,
-                            category=category,
-                            price=current_price,
-                            original_price=original_price_val,
-                            examples=title_examples,
-                        )
-                    except Exception:
-                        break
-                else:
-                    logger.warning("title_max_rejections_reached", ml_id=ml_id)
-                    break
-
-        # Salvar feedback do resultado final (approved/edited/timeout)
-        if result.action != "rejected":
-            try:
-                example_data = TitleExampleData(
-                    product_title=product_title,
-                    generated_title=result.generated_title,
-                    final_title=catchy_title or result.final_title,
-                    action=result.action,
-                    category=category,
-                    price=current_price,
-                    scored_offer_id=scored_offer_id,
-                )
-                await storage.save_title_example(example_data.to_dict())
-                logger.info(
-                    "title_example_saved",
-                    action=result.action,
-                    title=catchy_title,
-                )
-            except Exception as exc:
-                logger.warning("title_example_save_failed", error=str(exc))
+    if catchy_title and settings.title_review.enabled and title_review_bot:
+        catchy_title, should_abort = await _run_title_review(
+            title_review_bot, catchy_title, storage, scored_offer_id, offer, title_examples
+        )
+        if should_abort:
+            return False
 
     # 5. Selecionar melhor imagem real do produto
     enhanced_image_url: str | None = None
-    image_bytes: bytes | None = None
     if thumbnail_url:
-        enhanced_image_url, image_bytes = await _select_and_upload_image(
-            storage, product_id, ml_id, product_title,
-            thumbnail_url, category,
-            product_url=offer["product_url"],
+        enhanced_image_url, _ = await _select_and_upload_image(
+            storage, product_id, ml_id, thumbnail_url,
         )
 
     if not enhanced_image_url:
@@ -353,24 +410,6 @@ async def send_next_offer(
         return False
 
     bot = telegram_bot or TelegramBot()
-    results = await bot.publish(msg)
-    sent_ok = any(r["success"] for r in results)
-
-    if sent_ok:
-        try:
-            await storage.mark_as_sent(scored_offer_id, channel="telegram")
-        except Exception as exc:
-            logger.warning("mark_as_sent_failed", ml_id=ml_id, error=str(exc))
-
-        logger.info(
-            "offer_sent",
-            ml_id=ml_id,
-            score=offer["final_score"],
-            image_source=enhanced_image_url is not None,
-            catchy_title=catchy_title or "(fallback)",
-            link=short_url[:60],
-        )
-    else:
-        logger.error("offer_send_failed", ml_id=ml_id, results=results)
-
-    return sent_ok
+    return await _publish_telegram(
+        bot, msg, storage, scored_offer_id, ml_id, offer, short_url, catchy_title, enhanced_image_url
+    )

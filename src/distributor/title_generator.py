@@ -75,7 +75,7 @@ def _clean_title(raw: str) -> str:
     # Remove asteriscos, aspas, emojis de prefixo
     title = raw.strip().strip("*").strip('"').strip("'").strip()
     # Remove emojis comuns que o Haiku às vezes adiciona
-    title = re.sub(r"[\U0001F300-\U0001F9FF]", "", title).strip()
+    title = re.sub("[\U0001F300-\U0001F9FF]", "", title).strip()
     # Garante CAPS LOCK
     title = title.upper()
 

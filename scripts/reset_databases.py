@@ -91,7 +91,7 @@ async def truncate_supabase() -> None:
         for table in TABLES_TO_TRUNCATE:
             try:
                 # Delete sem where = truncate (deleta todas as linhas)
-                result = await supabase._db.table(table).delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+                await supabase._db.table(table).delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
                 logger.info("supabase_table_truncated", table=table)
             except Exception as e:
                 logger.error("supabase_table_delete_failed", table=table, error=str(e))
@@ -102,6 +102,28 @@ async def truncate_supabase() -> None:
         logger.error("supabase_connect_failed", error=str(e))
     finally:
         await supabase.close()
+
+
+async def _list_all_storage_paths(client: object, bucket: str, folder: str) -> list[str]:
+    """Lista recursivamente todos os caminhos de arquivos em uma pasta do Storage."""
+    subdirs = await client.storage.from_(bucket).list(folder)
+    if not subdirs:
+        return []
+
+    all_paths: list[str] = []
+    for subdir in subdirs:
+        subdir_name = subdir.get("name", "")
+        if not subdir_name:
+            continue
+        subdir_path = f"{folder}/{subdir_name}"
+        files = await client.storage.from_(bucket).list(subdir_path)
+        if files:
+            all_paths.extend(
+                f"{subdir_path}/{f['name']}"
+                for f in files
+                if f.get("name")
+            )
+    return all_paths
 
 
 async def clear_supabase_storage(bucket: str = "images", folder: str = "products") -> int:
@@ -117,31 +139,11 @@ async def clear_supabase_storage(bucket: str = "images", folder: str = "products
         await supabase.connect()
         client = supabase._db
 
-        # Passo 1: lista subpastas em products/ (cada subpasta é um product_id)
-        subdirs = await client.storage.from_(bucket).list(folder)
-        if not subdirs:
-            logger.info("storage_folder_empty", bucket=bucket, folder=folder)
-            return 0
-
-        # Passo 2: para cada subpasta, lista os arquivos dentro dela
-        all_paths: list[str] = []
-        for subdir in subdirs:
-            subdir_name = subdir.get("name", "")
-            if not subdir_name:
-                continue
-            subdir_path = f"{folder}/{subdir_name}"
-            files = await client.storage.from_(bucket).list(subdir_path)
-            if files:
-                for f in files:
-                    fname = f.get("name", "")
-                    if fname:
-                        all_paths.append(f"{subdir_path}/{fname}")
-
+        all_paths = await _list_all_storage_paths(client, bucket, folder)
         if not all_paths:
             logger.info("storage_folder_empty", bucket=bucket, folder=folder)
             return 0
 
-        # Passo 3: deleta em batches de 100
         batch_size = 100
         for i in range(0, len(all_paths), batch_size):
             batch = all_paths[i:i + batch_size]
@@ -165,7 +167,7 @@ async def main(include_supabase: bool = False, clear_storage: bool = False) -> N
     print("Crivo — Reset Databases (Opção A: Truncate)")
     print("=" * 70)
     print(f"\n📋 Tabelas a truncar: {', '.join(TABLES_TO_TRUNCATE)}")
-    print(f"🔒 Schema será PRESERVADO\n")
+    print("🔒 Schema será PRESERVADO\n")
 
     if include_supabase:
         print("⚠️  Supabase: SIM (vai truncar remoto também)")

@@ -6,6 +6,7 @@ usando SQLite real em memória e mocks para serviços externos.
 """
 
 from pathlib import Path
+from typing import AsyncGenerator
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -73,7 +74,7 @@ def fake_discount_product() -> ScrapedProduct:
 
 
 @pytest_asyncio.fixture
-async def sqlite_db(tmp_path: Path) -> SQLiteFallback:
+async def sqlite_db(tmp_path: Path) -> AsyncGenerator[SQLiteFallback, None]:
     """SQLite real em arquivo temporário."""
     db = SQLiteFallback(db_path=tmp_path / "test.db")
     await db.initialize()

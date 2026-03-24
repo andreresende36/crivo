@@ -56,7 +56,6 @@ LIFESTYLE_IMAGE_MODELS: dict[str, str] = {
         "google/gemini-3-pro-image-preview"  # Nano Banana Pro (Gemini 3 Pro)
     ),
     "riverflow-fast": "sourceful/riverflow-v2-fast",  # Riverflow V2 Fast
-    "riverflow-fast-preview": "sourceful/riverflow-v2-fast-preview",  # Riverflow V2 Fast Preview
     "riverflow-max-preview": "sourceful/riverflow-v2-max-preview",  # Riverflow V2 Max Preview
     "riverflow-pro": "sourceful/riverflow-v2-pro",  # Riverflow V2 Pro
     "riverflow-fast-preview": (
@@ -80,7 +79,7 @@ def _resolve_image_model() -> str:
     else:
         valid = ", ".join(sorted(LIFESTYLE_IMAGE_MODELS.keys()))
         raise ValueError(
-            f"Modelo de imagem '{alias}' não reconhecido. " f"Opções válidas: {valid}"
+            f"Modelo de imagem '{alias}' não reconhecido. Opções válidas: {valid}"
         )
     logger.info("lifestyle_image_model_resolved", alias=alias, model_id=model_id)
     return model_id
@@ -169,6 +168,57 @@ def _step1_analyze_product(image_b64: str, media_type: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Helpers de extração de imagem da resposta OpenRouter
+# ---------------------------------------------------------------------------
+
+def _extract_from_images_field(message: dict) -> bytes | None:
+    """Formato 1: message.images[] (campo dedicado do OpenRouter para Gemini)."""
+    images = message.get("images")
+    if not isinstance(images, list) or not images:
+        return None
+    img_entry = images[0]
+    url = img_entry.get("image_url", {}).get("url", "") if isinstance(img_entry, dict) else ""
+    if url.startswith("data:"):
+        image_bytes = base64.b64decode(url.split(",", 1)[1])
+        logger.info("gemini_image_generated_from_images_field")
+        return _ensure_jpeg(image_bytes)
+    return None
+
+
+def _extract_from_content_parts(content: object) -> bytes | None:
+    """Formato 2: content como lista de parts multimodais."""
+    if not isinstance(content, list):
+        return None
+    for part in content:
+        if isinstance(part, dict) and part.get("type") == "image_url":
+            url = part.get("image_url", {}).get("url", "")
+            if url.startswith("data:"):
+                image_bytes = base64.b64decode(url.split(",", 1)[1])
+                logger.info("gemini_image_generated_from_parts")
+                return _ensure_jpeg(image_bytes)
+    return None
+
+
+def _extract_from_content_string(content: object) -> bytes | None:
+    """Formato 3: content como string (data URI ou base64 puro)."""
+    if not isinstance(content, str):
+        return None
+    if content.startswith("data:image"):
+        image_bytes = base64.b64decode(content.split(",", 1)[1])
+        logger.info("gemini_image_generated_from_data_uri")
+        return _ensure_jpeg(image_bytes)
+    try:
+        image_bytes = base64.b64decode(content)
+        if len(image_bytes) > 1000:
+            logger.info("gemini_image_generated_from_raw_b64")
+            return _ensure_jpeg(image_bytes)
+    except Exception:
+        pass
+    logger.warning("gemini_returned_text_instead", text=content[:200])
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Passo 2 — Geração com Gemini via OpenRouter
 # ---------------------------------------------------------------------------
 def _step2_generate_image(
@@ -224,49 +274,13 @@ def _step2_generate_image(
     # 2. message.content[] — lista de parts multimodais (alguns modelos)
     # 3. message.content   — string com data URI ou base64 puro
 
-    # Formato 1: message.images (Gemini 2.5 Flash Image via OpenRouter)
-    images = message.get("images")
-    if isinstance(images, list) and images:
-        img_entry = images[0]
-        url = (
-            img_entry.get("image_url", {}).get("url", "")
-            if isinstance(img_entry, dict)
-            else ""
-        )
-        if url.startswith("data:"):
-            b64_data = url.split(",", 1)[1]
-            image_bytes = base64.b64decode(b64_data)
-            logger.info("gemini_image_generated_from_images_field")
-            return _ensure_jpeg(image_bytes)
-
-    content = message.get("content")
-
-    # Formato 2: content como lista de parts multimodais
-    if isinstance(content, list):
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "image_url":
-                url = part.get("image_url", {}).get("url", "")
-                if url.startswith("data:"):
-                    b64_data = url.split(",", 1)[1]
-                    image_bytes = base64.b64decode(b64_data)
-                    logger.info("gemini_image_generated_from_parts")
-                    return _ensure_jpeg(image_bytes)
-
-    # Formato 3: content como string (data URI ou base64 puro)
-    if isinstance(content, str):
-        if content.startswith("data:image"):
-            b64_data = content.split(",", 1)[1]
-            image_bytes = base64.b64decode(b64_data)
-            logger.info("gemini_image_generated_from_data_uri")
-            return _ensure_jpeg(image_bytes)
-        try:
-            image_bytes = base64.b64decode(content)
-            if len(image_bytes) > 1000:
-                logger.info("gemini_image_generated_from_raw_b64")
-                return _ensure_jpeg(image_bytes)
-        except Exception:
-            pass
-        logger.warning("gemini_returned_text_instead", text=content[:200])
+    result = (
+        _extract_from_images_field(message)
+        or _extract_from_content_parts(message.get("content"))
+        or _extract_from_content_string(message.get("content"))
+    )
+    if result:
+        return result
 
     raise RuntimeError(
         "Gemini não retornou imagem via OpenRouter. "

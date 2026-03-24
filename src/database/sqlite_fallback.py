@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+_SQL_GET_BADGE = "SELECT id FROM badges WHERE name = ?"
+_SQL_GET_CATEGORY = "SELECT id FROM categories WHERE name = ?"
+_SQL_GET_MARKETPLACE = "SELECT id FROM marketplaces WHERE name = ?"
+
 
 class SQLiteFallback:
     """
@@ -447,6 +451,35 @@ class SQLiteFallback:
         except Exception as exc:
             logger.warning("sqlite_seed_failed", error=str(exc))
 
+    async def _sync_one_lookup_table(
+        self,
+        table: str,
+        product_col: str,
+        remote_items: dict[str, str],
+    ) -> None:
+        """Sincroniza UUIDs de uma tabela de lookup (badges/categories/marketplaces)."""
+        for name, remote_id in remote_items.items():
+            cursor = await self._db.execute(
+                f"SELECT id FROM {table} WHERE name = ?",  # noqa: S608
+                (name,),
+            )
+            row = await cursor.fetchone()
+            if row and row["id"] != remote_id:
+                local_id = row["id"]
+                await self._db.execute(
+                    f"UPDATE products SET {product_col} = ? WHERE {product_col} = ?",  # noqa: S608
+                    (remote_id, local_id),
+                )
+                await self._db.execute(
+                    f"UPDATE {table} SET id = ? WHERE name = ?",  # noqa: S608
+                    (remote_id, name),
+                )
+            elif not row:
+                await self._db.execute(
+                    f"INSERT INTO {table} (id, name) VALUES (?, ?)",  # noqa: S608
+                    (remote_id, name),
+                )
+
     async def sync_lookup_ids(
         self,
         remote_badges: dict[str, str],
@@ -468,72 +501,9 @@ class SQLiteFallback:
         if remote_marketplaces is None:
             remote_marketplaces = {}
         try:
-            # Sync badges
-            for name, remote_id in remote_badges.items():
-                cursor = await self._db.execute(
-                    "SELECT id FROM badges WHERE name = ?", (name,)
-                )
-                row = await cursor.fetchone()
-                if row and row["id"] != remote_id:
-                    local_id = row["id"]
-                    await self._db.execute(
-                        "UPDATE products SET badge_id = ? WHERE badge_id = ?",
-                        (remote_id, local_id),
-                    )
-                    await self._db.execute(
-                        "UPDATE badges SET id = ? WHERE name = ?",
-                        (remote_id, name),
-                    )
-                elif not row:
-                    await self._db.execute(
-                        "INSERT INTO badges (id, name) VALUES (?, ?)",
-                        (remote_id, name),
-                    )
-
-            # Sync categories
-            for name, remote_id in remote_categories.items():
-                cursor = await self._db.execute(
-                    "SELECT id FROM categories WHERE name = ?", (name,)
-                )
-                row = await cursor.fetchone()
-                if row and row["id"] != remote_id:
-                    local_id = row["id"]
-                    await self._db.execute(
-                        "UPDATE products SET category_id = ? WHERE category_id = ?",
-                        (remote_id, local_id),
-                    )
-                    await self._db.execute(
-                        "UPDATE categories SET id = ? WHERE name = ?",
-                        (remote_id, name),
-                    )
-                elif not row:
-                    await self._db.execute(
-                        "INSERT INTO categories (id, name) VALUES (?, ?)",
-                        (remote_id, name),
-                    )
-
-            # Sync marketplaces
-            for name, remote_id in remote_marketplaces.items():
-                cursor = await self._db.execute(
-                    "SELECT id FROM marketplaces WHERE name = ?", (name,)
-                )
-                row = await cursor.fetchone()
-                if row and row["id"] != remote_id:
-                    local_id = row["id"]
-                    await self._db.execute(
-                        "UPDATE products SET marketplace_id = ? WHERE marketplace_id = ?",
-                        (remote_id, local_id),
-                    )
-                    await self._db.execute(
-                        "UPDATE marketplaces SET id = ? WHERE name = ?",
-                        (remote_id, name),
-                    )
-                elif not row:
-                    await self._db.execute(
-                        "INSERT INTO marketplaces (id, name) VALUES (?, ?)",
-                        (remote_id, name),
-                    )
-
+            await self._sync_one_lookup_table("badges", "badge_id", remote_badges)
+            await self._sync_one_lookup_table("categories", "category_id", remote_categories)
+            await self._sync_one_lookup_table("marketplaces", "marketplace_id", remote_marketplaces)
             await self._db.commit()
             logger.debug(
                 "sqlite_lookup_ids_synced",
@@ -576,7 +546,7 @@ class SQLiteFallback:
             return None
         try:
             cursor = await self._db.execute(
-                "SELECT id FROM badges WHERE name = ?", (name,)
+                _SQL_GET_BADGE, (name,)
             )
             row = await cursor.fetchone()
             if row:
@@ -600,7 +570,7 @@ class SQLiteFallback:
         """
         try:
             cursor = await self._db.execute(
-                "SELECT id FROM badges WHERE name = ?", (name,)
+                _SQL_GET_BADGE, (name,)
             )
             row = await cursor.fetchone()
             if not row:
@@ -642,7 +612,7 @@ class SQLiteFallback:
             return None
         try:
             cursor = await self._db.execute(
-                "SELECT id FROM categories WHERE name = ?", (name,)
+                _SQL_GET_CATEGORY, (name,)
             )
             row = await cursor.fetchone()
             if row:
@@ -665,7 +635,7 @@ class SQLiteFallback:
         """
         try:
             cursor = await self._db.execute(
-                "SELECT id FROM categories WHERE name = ?", (name,)
+                _SQL_GET_CATEGORY, (name,)
             )
             row = await cursor.fetchone()
             if not row:
@@ -705,7 +675,7 @@ class SQLiteFallback:
             return None
         try:
             cursor = await self._db.execute(
-                "SELECT id FROM marketplaces WHERE name = ?", (name,)
+                _SQL_GET_MARKETPLACE, (name,)
             )
             row = await cursor.fetchone()
             if row:
@@ -725,7 +695,7 @@ class SQLiteFallback:
         """Garante que o marketplace exista no SQLite com o UUID especificado (do Supabase)."""
         try:
             cursor = await self._db.execute(
-                "SELECT id FROM marketplaces WHERE name = ?", (name,)
+                _SQL_GET_MARKETPLACE, (name,)
             )
             row = await cursor.fetchone()
             if not row:
@@ -1011,10 +981,10 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="upsert_products_batch") from exc
 
-    async def add_price_history_batch(self, entries: list[dict]) -> bool:
+    async def add_price_history_batch(self, entries: list[dict]) -> None:
         """Insere múltiplas entradas de histórico de preço em 1 commit."""
         if not entries:
-            return True
+            return
         now = datetime.now(tz=timezone.utc).isoformat()
         try:
             await self._db.executemany(
@@ -1036,7 +1006,6 @@ class SQLiteFallback:
             )
             await self._db.commit()
             logger.debug("sqlite_price_history_batch_added", count=len(entries))
-            return True
         except Exception as exc:
             raise SQLiteError(str(exc), operation="add_price_history_batch") from exc
 
@@ -1607,6 +1576,29 @@ class SQLiteFallback:
             fail_ids.append("outer_error")
         return {"synced": len(ok_ids), "errors": len(fail_ids)}
 
+    async def _local_ids_to_names(self, table: str, local_ids: set) -> dict[str, str]:
+        """Mapeia UUIDs locais para nomes via consulta SQLite."""
+        if not local_ids:
+            return {}
+        placeholders = ",".join("?" * len(local_ids))
+        cursor = await self._db.execute(
+            f"SELECT id, name FROM {table} WHERE id IN ({placeholders})",  # noqa: S608
+            list(local_ids),
+        )
+        return {row["id"]: row["name"] for row in await cursor.fetchall()}
+
+    async def _names_to_remote_ids(self, names: set, get_or_create_fn: Any) -> dict[str, str]:
+        """Resolve nomes para UUIDs do Supabase usando a função fornecida."""
+        remote_map: dict[str, str] = {}
+        for name in names:
+            try:
+                remote_id = await get_or_create_fn(name)
+                if remote_id:
+                    remote_map[name] = remote_id
+            except Exception:
+                pass
+        return remote_map
+
     async def _resolve_product_fks_for_sync(
         self,
         client: SupabaseClient,
@@ -1618,63 +1610,29 @@ class SQLiteFallback:
         Os UUIDs de lookup no SQLite são diferentes dos do Supabase.
         Busca os nomes via JOIN local e resolve para os UUIDs do Supabase.
         """
-        # Coleta badge_ids e category_ids locais usados
         local_badge_ids = {d["badge_id"] for _, d in data_list if d.get("badge_id")}
         local_cat_ids = {d["category_id"] for _, d in data_list if d.get("category_id")}
 
-        # Mapeia UUID local → nome (via SQLite)
-        badge_local_to_name: dict[str, str] = {}
-        if local_badge_ids:
-            placeholders = ",".join("?" * len(local_badge_ids))
-            cursor = await self._db.execute(
-                f"SELECT id, name FROM badges WHERE id IN ({placeholders})",  # noqa: S608
-                list(local_badge_ids),
-            )
-            for row in await cursor.fetchall():
-                badge_local_to_name[row["id"]] = row["name"]
+        badge_local_to_name = await self._local_ids_to_names("badges", local_badge_ids)
+        cat_local_to_name = await self._local_ids_to_names("categories", local_cat_ids)
 
-        cat_local_to_name: dict[str, str] = {}
-        if local_cat_ids:
-            placeholders = ",".join("?" * len(local_cat_ids))
-            cursor = await self._db.execute(
-                f"SELECT id, name FROM categories WHERE id IN ({placeholders})",  # noqa: S608
-                list(local_cat_ids),
-            )
-            for row in await cursor.fetchall():
-                cat_local_to_name[row["id"]] = row["name"]
+        badge_name_to_remote = await self._names_to_remote_ids(
+            set(badge_local_to_name.values()), client.get_or_create_badge
+        )
+        cat_name_to_remote = await self._names_to_remote_ids(
+            set(cat_local_to_name.values()), client.get_or_create_category
+        )
 
-        # Resolve nomes → UUIDs do Supabase (com cache)
-        badge_name_to_remote: dict[str, str] = {}
-        for name in set(badge_local_to_name.values()):
-            try:
-                remote_id = await client.get_or_create_badge(name)
-                if remote_id:
-                    badge_name_to_remote[name] = remote_id
-            except Exception:
-                pass
-
-        cat_name_to_remote: dict[str, str] = {}
-        for name in set(cat_local_to_name.values()):
-            try:
-                remote_id = await client.get_or_create_category(name)
-                if remote_id:
-                    cat_name_to_remote[name] = remote_id
-            except Exception:
-                pass
-
-        # Substitui UUIDs locais pelos UUIDs do Supabase nos dados
         for _, data in data_list:
             local_bid = data.get("badge_id")
             if local_bid and local_bid in badge_local_to_name:
-                name = badge_local_to_name[local_bid]
-                data["badge_id"] = badge_name_to_remote.get(name)
+                data["badge_id"] = badge_name_to_remote.get(badge_local_to_name[local_bid])
             elif local_bid:
-                data["badge_id"] = None  # UUID local sem nome correspondente
+                data["badge_id"] = None
 
             local_cid = data.get("category_id")
             if local_cid and local_cid in cat_local_to_name:
-                name = cat_local_to_name[local_cid]
-                data["category_id"] = cat_name_to_remote.get(name)
+                data["category_id"] = cat_name_to_remote.get(cat_local_to_name[local_cid])
             elif local_cid:
                 data["category_id"] = None
 

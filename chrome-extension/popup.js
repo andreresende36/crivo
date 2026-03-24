@@ -17,6 +17,40 @@ const csrfStatusEl = document.getElementById("csrf-status");
 
 btnExtract.addEventListener("click", handleExtract);
 
+async function extractCsrfToken(cookies) {
+  const csrfCookie = cookies.find((c) => c.name === "_csrf");
+  let csrfToken = "";
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.url?.includes("mercadolivre.com.br")) {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: extractCsrfFromPage,
+      });
+      if (results?.[0]?.result) {
+        csrfToken = results[0].result;
+      }
+    }
+  } catch (e) {
+    console.log("Could not inject content script:", e.message);
+  }
+
+  return csrfToken || (csrfCookie ? csrfCookie.value : "");
+}
+
+function showCopyStatus(missingCritical, csrfToken) {
+  detailsEl.classList.remove("hidden");
+  const baseMsg = "Copiado para o clipboard!";
+  if (missingCritical.length > 0) {
+    showStatus("warning", `${baseMsg} (cookies ausentes: ${missingCritical.join(", ")})`);
+  } else if (!csrfToken) {
+    showStatus("warning", "Cookies copiados! CSRF token nao encontrado — abra o painel de afiliados e tente novamente.");
+  } else {
+    showStatus("success", baseMsg);
+  }
+}
+
 async function handleExtract() {
   btnExtract.disabled = true;
   btnText.textContent = "Extraindo...";
@@ -27,77 +61,29 @@ async function handleExtract() {
     // 1. Read all cookies from ML domain
     const cookies = await chrome.cookies.getAll({ domain: ML_DOMAIN });
 
-    if (!cookies || cookies.length === 0) {
+    if (!cookies?.length) {
       showStatus("error", "Nenhum cookie encontrado. Acesse mercadolivre.com.br e faça login.");
       resetButton();
       return;
     }
 
-    // Build cookie string (all cookies from the domain)
     const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-
-    // Check for critical cookies
     const foundNames = new Set(cookies.map((c) => c.name));
     const missingCritical = CRITICAL_COOKIES.filter((name) => !foundNames.has(name));
-
     cookieCountEl.textContent = cookies.length;
 
-    // 2. Try to extract CSRF token from the active tab
-    let csrfToken = "";
-
-    // First try: get _csrf cookie value (some ML implementations use cookie value as token)
-    const csrfCookie = cookies.find((c) => c.name === "_csrf");
-
-    // Second try: inject content script to extract from page
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      if (tab && tab.url && tab.url.includes("mercadolivre.com.br")) {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: extractCsrfFromPage,
-        });
-
-        if (results && results[0] && results[0].result) {
-          csrfToken = results[0].result;
-        }
-      }
-    } catch (e) {
-      // Content script injection may fail if not on ML page
-      console.log("Could not inject content script:", e.message);
-    }
-
-    // Fallback: use _csrf cookie value
-    if (!csrfToken && csrfCookie) {
-      csrfToken = csrfCookie.value;
-    }
-
+    // 2. Extract CSRF token
+    const csrfToken = await extractCsrfToken(cookies);
     csrfStatusEl.textContent = csrfToken ? "Encontrado" : "Nao encontrado";
     csrfStatusEl.className = csrfToken ? "found" : "not-found";
 
-    // 3. Format output for .env
+    // 3. Format + copy to clipboard
     let output = `ML_SESSION_COOKIES=${cookieString}`;
-    if (csrfToken) {
-      output += `\nML_CSRF_TOKEN=${csrfToken}`;
-    }
-
-    // 4. Copy to clipboard
+    if (csrfToken) output += `\nML_CSRF_TOKEN=${csrfToken}`;
     await navigator.clipboard.writeText(output);
 
-    // 5. Show success
-    detailsEl.classList.remove("hidden");
-
-    let statusMsg = "Copiado para o clipboard!";
-    if (missingCritical.length > 0) {
-      statusMsg += ` (cookies ausentes: ${missingCritical.join(", ")})`;
-      showStatus("warning", statusMsg);
-    } else if (!csrfToken) {
-      showStatus("warning", "Cookies copiados! CSRF token nao encontrado — abra o painel de afiliados e tente novamente.");
-    } else {
-      showStatus("success", statusMsg);
-    }
-
-    // Success button state
+    // 4. Show result
+    showCopyStatus(missingCritical, csrfToken);
     btnIcon.textContent = "\u2705"; // checkmark
     btnText.textContent = "Copiado!";
     setTimeout(resetButton, 3000);
@@ -114,8 +100,8 @@ function extractCsrfFromPage() {
   if (metaTag) return metaTag.getAttribute("content");
 
   // Try common ML global variables
-  if (window.__PRELOADED_STATE__ && window.__PRELOADED_STATE__.csrfToken) {
-    return window.__PRELOADED_STATE__.csrfToken;
+  if (globalThis.__PRELOADED_STATE__?.csrfToken) {
+    return globalThis.__PRELOADED_STATE__.csrfToken;
   }
 
   // Try hidden input

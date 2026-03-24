@@ -28,9 +28,6 @@ from telegram.ext import (
 
 from src.config import settings
 
-if TYPE_CHECKING:
-    pass
-
 logger = structlog.get_logger(__name__)
 
 
@@ -110,7 +107,7 @@ class TitleReviewBot:
     async def stop(self) -> None:
         """Para o polling e resolve futures pendentes como timeout."""
         # Resolve pendentes
-        for request_id, future in list(self._pending.items()):
+        for request_id, future in self._pending.items():
             if not future.done():
                 gen_title = self._editing.get(request_id, "")
                 future.set_result(

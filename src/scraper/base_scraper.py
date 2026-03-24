@@ -345,7 +345,7 @@ class BaseScraper(ABC):
             if response and response.status == 429:
                 logger.warning("rate_limited", url=url)
                 await asyncio.sleep(random.uniform(30, 60))
-                raise Exception("Rate limited — retrying")
+                raise RateLimitError("Rate limited — retrying")
 
             if response and response.status >= 400:
                 logger.warning("http_error", status=response.status, url=url)
@@ -355,7 +355,7 @@ class BaseScraper(ABC):
             if await self._is_blocked(page):
                 logger.warning("captcha_detected", url=url)
                 await asyncio.sleep(random.uniform(10, 20))
-                raise Exception("CAPTCHA detectado — retrying")
+                raise CaptchaError("CAPTCHA detectado — retrying")
 
             # Aceita banner de cookies se presente
             await self._accept_cookies(page)

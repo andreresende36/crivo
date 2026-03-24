@@ -34,6 +34,8 @@ from .seeds import BADGES, CATEGORIES, MARKETPLACES
 
 logger = structlog.get_logger(__name__)
 
+_FOREIGN_KEY = "FOREIGN KEY"
+
 
 class StorageManager:
     """
@@ -99,7 +101,7 @@ class StorageManager:
                 # Auto-sync: envia pendentes do SQLite ao Supabase
                 await self._auto_sync()
             else:
-                await self._supabase.close()
+                self._supabase.close()
                 logger.warning(
                     "storage_backend",
                     backend="sqlite",
@@ -193,7 +195,7 @@ class StorageManager:
         """Fecha todas as conexões abertas."""
         await self._sqlite.close()
         if self._using_supabase:
-            await self._supabase.close()
+            self._supabase.close()
 
     # ------------------------------------------------------------------
     # Propriedades de estado
@@ -420,6 +422,25 @@ class StorageManager:
                 pass
         return await self._sqlite.check_duplicates_batch(ml_ids)
 
+    async def _resolve_lookup_ids_batch(
+        self,
+        products: list[ScrapedProduct],
+        attr: str,
+        resolve_fn: Any,
+        require_value: bool = True,
+    ) -> dict[str, str | None]:
+        """Resolve IDs de lookup (badge/category/marketplace) em batch com cache."""
+        cache: dict[str, str | None] = {}
+        id_map: dict[str, str | None] = {}
+        for p in products:
+            key = getattr(p, attr, None)
+            if require_value and not key:
+                continue
+            if key not in cache:
+                cache[key] = await resolve_fn(key)
+            id_map[p.ml_id] = cache[key]
+        return id_map
+
     async def upsert_products_batch(
         self, products: list[ScrapedProduct]
     ) -> dict[str, str]:
@@ -430,31 +451,11 @@ class StorageManager:
         if not products:
             return {}
 
-        # Resolve badge IDs em batch (cache por nome)
-        badge_cache: dict[str, str | None] = {}
-        badge_ids: dict[str, str | None] = {}
-        for p in products:
-            if p.badge:
-                if p.badge not in badge_cache:
-                    badge_cache[p.badge] = await self.resolve_badge_id(p.badge)
-                badge_ids[p.ml_id] = badge_cache[p.badge]
-
-        # Resolve category IDs em batch (cache por nome)
-        cat_cache: dict[str, str | None] = {}
-        category_ids: dict[str, str | None] = {}
-        for p in products:
-            if p.category:
-                if p.category not in cat_cache:
-                    cat_cache[p.category] = await self.resolve_category_id(p.category)
-                category_ids[p.ml_id] = cat_cache[p.category]
-
-        # Resolve marketplace IDs em batch (cache por nome)
-        mp_cache: dict[str, str | None] = {}
-        marketplace_ids: dict[str, str | None] = {}
-        for p in products:
-            if p.marketplace not in mp_cache:
-                mp_cache[p.marketplace] = await self.resolve_marketplace_id(p.marketplace)
-            marketplace_ids[p.ml_id] = mp_cache[p.marketplace]
+        badge_ids = await self._resolve_lookup_ids_batch(products, "badge", self.resolve_badge_id)
+        category_ids = await self._resolve_lookup_ids_batch(products, "category", self.resolve_category_id)
+        marketplace_ids = await self._resolve_lookup_ids_batch(
+            products, "marketplace", self.resolve_marketplace_id, require_value=False
+        )
 
         if self._using_supabase:
             try:
@@ -516,18 +517,20 @@ class StorageManager:
         if not changed:
             return True
 
-        local_ok = False
+        sqlite_ok = False
         try:
-            local_ok = await self._sqlite.add_price_history_batch(changed)
+            await self._sqlite.add_price_history_batch(changed)
+            sqlite_ok = True
         except SQLiteError as exc:
             logger.warning("sqlite_price_history_batch_failed", error=str(exc))
 
         if self._using_supabase:
             try:
-                return await self._supabase.add_price_history_batch(changed)
+                await self._supabase.add_price_history_batch(changed)
+                return True
             except SupabaseError as exc:
                 logger.warning("supabase_price_history_batch_failed", error=str(exc))
-        return local_ok
+        return sqlite_ok
 
     # ------------------------------------------------------------------
     # price_history
@@ -546,7 +549,7 @@ class StorageManager:
                 product_id, price, original_price
             )
         except SQLiteError as exc:
-            if "FOREIGN KEY" in str(exc):
+            if _FOREIGN_KEY in str(exc):
                 logger.warning(
                     "sqlite_fk_skip",
                     product_id=product_id,
@@ -616,7 +619,7 @@ class StorageManager:
                 offer_id=canonical_id,
             )
         except SQLiteError as exc:
-            if "FOREIGN KEY" in str(exc):
+            if _FOREIGN_KEY in str(exc):
                 logger.warning(
                     "sqlite_fk_skip",
                     product_id=product_id,
@@ -661,7 +664,7 @@ class StorageManager:
                 offer_ids=remote_ids or None,
             )
         except SQLiteError as exc:
-            if "FOREIGN KEY" in str(exc):
+            if _FOREIGN_KEY in str(exc):
                 logger.warning(
                     "sqlite_fk_skip_batch",
                     table="scored_offers",
@@ -697,7 +700,7 @@ class StorageManager:
                 scored_offer_id, channel
             )
         except SQLiteError as exc:
-            if "FOREIGN KEY" in str(exc):
+            if _FOREIGN_KEY in str(exc):
                 logger.debug(
                     "sqlite_fk_skip",
                     scored_offer_id=scored_offer_id,
@@ -722,7 +725,7 @@ class StorageManager:
                 scored_offer_id, reason
             )
         except SQLiteError as exc:
-            if "FOREIGN KEY" in str(exc):
+            if _FOREIGN_KEY in str(exc):
                 logger.debug(
                     "sqlite_fk_skip",
                     scored_offer_id=scored_offer_id,
@@ -745,7 +748,7 @@ class StorageManager:
         try:
             local_ok = await self._sqlite.revert_to_pending(scored_offer_id)
         except SQLiteError as exc:
-            if "FOREIGN KEY" in str(exc):
+            if _FOREIGN_KEY in str(exc):
                 logger.debug(
                     "sqlite_fk_skip",
                     scored_offer_id=scored_offer_id,

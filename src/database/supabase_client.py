@@ -31,6 +31,8 @@ from .exceptions import SupabaseError
 
 logger = structlog.get_logger(__name__)
 
+_FIELDS_ID_NAME = "id, name"
+
 
 class SupabaseClient:
     """
@@ -63,7 +65,7 @@ class SupabaseClient:
         )
         logger.info("supabase_connected", url=self.cfg.url)
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """Libera a conexão."""
         self._client = None
         logger.info("supabase_closed")
@@ -154,7 +156,7 @@ class SupabaseClient:
     async def get_all_badges(self) -> dict[str, str]:
         """Retorna todos os badges como {nome: uuid}."""
         try:
-            result = await self._db.table("badges").select("id, name").execute()
+            result = await self._db.table("badges").select(_FIELDS_ID_NAME).execute()
             return {row["name"]: row["id"] for row in (result.data or [])}
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_all_badges") from exc
@@ -162,7 +164,7 @@ class SupabaseClient:
     async def get_all_categories(self) -> dict[str, str]:
         """Retorna todas as categorias como {nome: uuid}."""
         try:
-            result = await self._db.table("categories").select("id, name").execute()
+            result = await self._db.table("categories").select(_FIELDS_ID_NAME).execute()
             return {row["name"]: row["id"] for row in (result.data or [])}
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_all_categories") from exc
@@ -193,7 +195,7 @@ class SupabaseClient:
     async def get_all_marketplaces(self) -> dict[str, str]:
         """Retorna todos os marketplaces como {nome: uuid}."""
         try:
-            result = await self._db.table("marketplaces").select("id, name").execute()
+            result = await self._db.table("marketplaces").select(_FIELDS_ID_NAME).execute()
             return {row["name"]: row["id"] for row in (result.data or [])}
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_all_marketplaces") from exc
@@ -334,13 +336,13 @@ class SupabaseClient:
         except Exception as exc:
             raise SupabaseError(str(exc), operation="upsert_products_batch") from exc
 
-    async def add_price_history_batch(self, entries: list[dict]) -> bool:
+    async def add_price_history_batch(self, entries: list[dict]) -> None:
         """
         Insere múltiplas entradas de histórico de preço em UMA única chamada.
         entries: lista de dicts com keys: product_id, price, original_price.
         """
         if not entries:
-            return True
+            return
         now = datetime.now(tz=timezone.utc).isoformat()
         rows = [
             {
@@ -354,7 +356,6 @@ class SupabaseClient:
         try:
             await self._db.table("price_history").insert(rows).execute()
             logger.debug("price_history_batch_added", count=len(rows))
-            return True
         except Exception as exc:
             raise SupabaseError(str(exc), operation="add_price_history_batch") from exc
 

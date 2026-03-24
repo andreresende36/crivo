@@ -272,6 +272,36 @@ def _crop_info_section(img_bytes: bytes) -> bytes:
         return img_bytes  # fallback: retorna original intacto
 
 
+def _build_screenshot_html(screenshots: dict[str, bytes], ml_id: str) -> str:
+    """Gera HTML do screenshot do card (com crop) ou placeholder."""
+    if ml_id in screenshots:
+        cropped = _crop_info_section(screenshots[ml_id])
+        b64 = base64.b64encode(cropped).decode()
+        return f'<img src="data:image/png;base64,{b64}" alt="card {ml_id}">'
+    return (
+        '<div class="no-img" style="padding:40px 0;color:#aaa;font-size:12px">'
+        'screenshot não disponível</div>'
+    )
+
+
+def _build_breakdown_rows(b: object) -> str:
+    """Gera linhas HTML da tabela de breakdown de score."""
+    criteria = [
+        ("Desconto", b.discount.final_score),
+        ("Badge", b.badge.final_score),
+        ("Avaliação", b.rating.final_score),
+        ("Reviews", b.reviews.final_score),
+        ("Frete grátis", b.free_shipping.final_score),
+        ("Parcelamento", b.installments.final_score),
+        ("Título", b.title_quality.final_score),
+    ]
+    rows = ""
+    for label, pts in criteria:
+        zero_class = ' class="zero"' if pts == 0 else ""
+        rows += f"<tr{zero_class}><td>{label}</td><td>{pts:.1f} pt</td></tr>"
+    return rows
+
+
 def _build_cards(
     ordered: list["ScoredProduct"],
     screenshots: dict[str, bytes],
@@ -282,38 +312,13 @@ def _build_cards(
         p = s.product
         b = s.breakdown
 
-        # --- Screenshot (recorta espaço branco da foto do produto) ---
-        if p.ml_id in screenshots:
-            cropped = _crop_info_section(screenshots[p.ml_id])
-            b64 = base64.b64encode(cropped).decode()
-            img_html = f'<img src="data:image/png;base64,{b64}" alt="card {p.ml_id}">'
-        else:
-            img_html = (
-                '<div class="no-img" style="padding:40px 0;'
-                'color:#aaa;font-size:12px">'
-                'screenshot não disponível</div>'
-            )
-
-        # --- Badge pill ---
-        if p.badge:
-            badge_html = f'<span class="badge-pill">{p.badge}</span>'
-        else:
-            badge_html = '<span class="badge-pill no-badge">sem badge</span>'
-
-        # --- Breakdown rows ---
-        criteria = [
-            ("Desconto", b.discount.final_score),
-            ("Badge", b.badge.final_score),
-            ("Avaliação", b.rating.final_score),
-            ("Reviews", b.reviews.final_score),
-            ("Frete grátis", b.free_shipping.final_score),
-            ("Parcelamento", b.installments.final_score),
-            ("Título", b.title_quality.final_score),
-        ]
-        rows = ""
-        for label, pts in criteria:
-            zero_class = ' class="zero"' if pts == 0 else ""
-            rows += f"<tr{zero_class}><td>{label}</td><td>{pts:.1f} pt</td></tr>"
+        img_html = _build_screenshot_html(screenshots, p.ml_id)
+        badge_html = (
+            f'<span class="badge-pill">{p.badge}</span>'
+            if p.badge
+            else '<span class="badge-pill no-badge">sem badge</span>'
+        )
+        rows = _build_breakdown_rows(b)
 
         # --- Metadados inline ---
         price_str = f"R$ {p.price:.2f}".replace(".", ",")

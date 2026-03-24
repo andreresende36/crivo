@@ -5,6 +5,8 @@ Upload e recuperação de imagens aprimoradas via Supabase Storage.
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import structlog
 
@@ -25,12 +27,13 @@ async def download_image_bytes(
             descartadas (anti-placeholder). Use 0 para aceitar qualquer tamanho.
     """
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(url, follow_redirects=True)
-            resp.raise_for_status()
-            if min_size_bytes > 0 and len(resp.content) < min_size_bytes:
-                return None
-            return resp.content
+        async with asyncio.timeout(timeout):
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, follow_redirects=True)
+                resp.raise_for_status()
+                if min_size_bytes > 0 and len(resp.content) < min_size_bytes:
+                    return None
+                return resp.content
     except Exception as exc:
         logger.error("image_download_failed", url=url[:80], error=str(exc))
         return None

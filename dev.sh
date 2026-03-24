@@ -13,13 +13,13 @@ NC='\033[0m'
 mkdir -p "$LOG_DIR"
 
 # Verificações
-if [ ! -d "$VENV" ]; then
+if [[ ! -d "$VENV" ]]; then
   echo -e "${RED}[erro]${NC} .venv não encontrado. Rode:"
   echo -e "  python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
   exit 1
 fi
 
-if [ ! -d "$ROOT/admin/node_modules" ]; then
+if [[ ! -d "$ROOT/admin/node_modules" ]]; then
   echo -e "${YELLOW}[info]${NC} Instalando dependências do admin..."
   (cd "$ROOT/admin" && npm install)
 fi
@@ -31,8 +31,9 @@ cleanup() {
   wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null
   kill "$TAIL_PID" 2>/dev/null
   echo -e "${GREEN}[ok]${NC} Serviços encerrados."
-  exit 0
+  return 0
 }
+
 trap cleanup INT TERM
 
 # Backend Python
@@ -58,3 +59,4 @@ TAIL_PID=$!
 
 wait "$BACKEND_PID" "$FRONTEND_PID"
 kill "$TAIL_PID" 2>/dev/null
+exit 0

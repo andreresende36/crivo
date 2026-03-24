@@ -54,20 +54,16 @@ WORKDIR /app
 # Instala dependências Python primeiro (aproveita cache do Docker)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Instala Chromium do Playwright (deps já instaladas acima)
-RUN playwright install chromium
+    pip install --no-cache-dir -r requirements.txt && \
+    playwright install chromium
 
 # Copia código-fonte e prompts
 COPY src/ ./src/
 COPY prompts/ ./prompts/
 
-# Cria diretórios de dados e logs
-RUN mkdir -p /app/data /app/logs
-
-# Usuário não-root para segurança
-RUN useradd --create-home --shell /bin/bash crivo && \
+# Cria diretórios de dados e logs, configura usuário não-root
+RUN mkdir -p /app/data /app/logs && \
+    useradd --create-home --shell /bin/bash crivo && \
     chown -R crivo:crivo /app
 USER crivo
 

@@ -204,6 +204,98 @@ def _render_inline(emoji: str, color: str, event: str, kv: dict) -> str:
     return "  ".join(parts)
 
 
+_COUNTER_LABELS = [
+    ("Scraped", "scraped"),
+    ("Novos", "new"),
+    ("Scored", "scored"),
+    ("Aprovados", "approved"),
+    ("Rejeitados", "rejected"),
+    ("Salvos", "saved"),
+    ("Erros", "errors"),
+]
+
+_TIMING_LABELS = [
+    ("Scraping", "scraping"),
+    ("Dedup", "dedup"),
+    ("Fake Filter", "fake_filter"),
+    ("Scoring", "scoring"),
+    ("Salvamento", "saving"),
+]
+
+
+def _counter_color(key: str, val: int) -> str:
+    """Retorna a cor ANSI para um contador do pipeline."""
+    if key == "errors":
+        return _C.B_RED if val > 0 else _C.DIM
+    if key == "approved":
+        return _C.B_GREEN
+    if key == "rejected":
+        return _C.YELLOW if val > 0 else _C.DIM
+    return _C.B_WHITE
+
+
+def _render_counters(kv: dict, lines: list) -> None:
+    """Adiciona linhas de contadores principais ao banner."""
+    for label, key in _COUNTER_LABELS:
+        val = int(kv.get(key, 0) or 0)
+        color = _counter_color(key, val)
+        lines.append(f"   {_C.DIM}▸{_C.RESET} {label}: {color}{val}{_C.RESET}")
+
+
+def _render_score_stats(kv: dict, thin: str, lines: list) -> None:
+    """Adiciona seção de score stats ao banner."""
+    score_stats = kv.get("score_stats", {})
+    if not score_stats:
+        return
+    lines.append(thin)
+    avg = score_stats.get("score_avg", 0)
+    mn = score_stats.get("score_min", 0)
+    mx = score_stats.get("score_max", 0)
+    lines.append(
+        f"   {_C.DIM}▸{_C.RESET} Score: "
+        f"{_C.B_WHITE}avg={avg}{_C.RESET}  "
+        f"{_C.DIM}min={mn}  max={mx}{_C.RESET}"
+    )
+
+
+def _render_price_stats(kv: dict, lines: list) -> None:
+    """Adiciona seção de price stats ao banner."""
+    price_stats = kv.get("price_stats", {})
+    if not price_stats:
+        return
+    p_min = price_stats.get("price_min", 0)
+    p_max = price_stats.get("price_max", 0)
+    d_avg = price_stats.get("discount_avg")
+    price_line = (
+        f"   {_C.DIM}▸{_C.RESET} Preço: "
+        f"{_C.B_WHITE}R$ {p_min:.0f}{_C.RESET} – "
+        f"{_C.B_WHITE}R$ {p_max:.0f}{_C.RESET}"
+    )
+    if d_avg is not None:
+        price_line += (
+            f"  {_C.DIM}(desc. médio "
+            f"{_C.RESET}{_C.B_GREEN}{d_avg}%"
+            f"{_C.RESET}{_C.DIM}){_C.RESET}"
+        )
+    lines.append(price_line)
+
+
+def _render_timings(kv: dict, thin: str, lines: list) -> None:
+    """Adiciona seção de timings por etapa ao banner."""
+    timings = kv.get("timings", {})
+    if not timings:
+        return
+    lines.append(thin)
+    parts = [
+        f"{label} {_C.B_WHITE}{timings[key]}s{_C.RESET}"
+        for label, key in _TIMING_LABELS
+        if timings.get(key) is not None
+    ]
+    lines.append(
+        f"   {_C.DIM}▸ Tempos:{_C.RESET} {f'{_C.DIM} │ {_C.RESET}'.join(parts)}"
+    )
+
+
 def _render_pipeline_summary(ts: str, kv: dict) -> str:
     """
     Renderiza o banner final do pipeline com métricas enriquecidas:
@@ -211,89 +303,16 @@ def _render_pipeline_summary(ts: str, kv: dict) -> str:
     """
     sep = f"{_C.B_GREEN}{'═' * 60}{_C.RESET}"
     thin = f"{_C.DIM}{'─' * 60}{_C.RESET}"
+    lines: list[str] = ["", sep, f"🏁  {_C.B_GREEN}PIPELINE FINALIZADO{_C.RESET}", thin]
 
-    lines = ["", sep, f"🏁  {_C.B_GREEN}PIPELINE FINALIZADO{_C.RESET}", thin]
+    _render_counters(kv, lines)
+    _render_score_stats(kv, thin, lines)
+    _render_price_stats(kv, lines)
+    _render_timings(kv, thin, lines)
 
-    # ── Contadores principais
-    labels = [
-        ("Scraped", "scraped"),
-        ("Novos", "new"),
-        ("Scored", "scored"),
-        ("Aprovados", "approved"),
-        ("Rejeitados", "rejected"),
-        ("Salvos", "saved"),
-        ("Erros", "errors"),
-    ]
-    for label, key in labels:
-        val = kv.get(key, 0)
-        if key == "errors":
-            color = _C.B_RED if val and int(val) > 0 else _C.DIM
-        elif key == "approved":
-            color = _C.B_GREEN
-        elif key == "rejected":
-            color = _C.YELLOW if val and int(val) > 0 else _C.DIM
-        else:
-            color = _C.B_WHITE
-        lines.append(f"   {_C.DIM}▸{_C.RESET} {label}: {color}{val}{_C.RESET}")
-
-    # ── Score stats
-    score_stats = kv.get("score_stats", {})
-    if score_stats:
-        lines.append(thin)
-        avg = score_stats.get("score_avg", 0)
-        mn = score_stats.get("score_min", 0)
-        mx = score_stats.get("score_max", 0)
-        lines.append(
-            f"   {_C.DIM}▸{_C.RESET} Score: "
-            f"{_C.B_WHITE}avg={avg}{_C.RESET}  "
-            f"{_C.DIM}min={mn}  max={mx}{_C.RESET}"
-        )
-
-    # ── Price stats
-    price_stats = kv.get("price_stats", {})
-    if price_stats:
-        p_min = price_stats.get("price_min", 0)
-        p_max = price_stats.get("price_max", 0)
-        d_avg = price_stats.get("discount_avg")
-        price_line = (
-            f"   {_C.DIM}▸{_C.RESET} Preço: "
-            f"{_C.B_WHITE}R$ {p_min:.0f}{_C.RESET} – "
-            f"{_C.B_WHITE}R$ {p_max:.0f}{_C.RESET}"
-        )
-        if d_avg is not None:
-            price_line += (
-                f"  {_C.DIM}(desc. médio "
-                f"{_C.RESET}{_C.B_GREEN}{d_avg}%"
-                f"{_C.RESET}{_C.DIM}){_C.RESET}"
-            )
-        lines.append(price_line)
-
-    # ── Timings por etapa
-    timings = kv.get("timings", {})
-    if timings:
-        lines.append(thin)
-        timing_labels = [
-            ("Scraping", "scraping"),
-            ("Dedup", "dedup"),
-            ("Fake Filter", "fake_filter"),
-            ("Scoring", "scoring"),
-            ("Salvamento", "saving"),
-        ]
-        parts = []
-        for label, key in timing_labels:
-            val = timings.get(key)
-            if val is not None:
-                parts.append(f"{label} {_C.B_WHITE}{val}s{_C.RESET}")
-        lines.append(
-            f"   {_C.DIM}▸ Tempos:{_C.RESET} {f'{_C.DIM} │ {_C.RESET}'.join(parts)}"
-        )
-
-    # ── Elapsed total
     elapsed = kv.get("elapsed_seconds")
     if elapsed is not None:
-        lines.append(
-            f"   {_C.DIM}▸{_C.RESET} Total: " f"{_C.B_GREEN}{elapsed}s{_C.RESET}"
-        )
+        lines.append(f"   {_C.DIM}▸{_C.RESET} Total: {_C.B_GREEN}{elapsed}s{_C.RESET}")
 
     lines.append(sep)
     return f"{ts}  " + "\n".join(lines)
@@ -310,9 +329,11 @@ def _render_product_rejected(ts: str, kv: dict) -> str:
 
     lines = [
         f"\n{thin}",
-        f"🚫  {_C.B_YELLOW}REJEITADO{_C.RESET}  "
-        f"{_C.DIM}ml_id={_C.RESET}{_C.WHITE}{ml_id}{_C.RESET}  "
-        f"{_C.DIM}score={_C.RESET}{_C.B_RED}{score}{_C.RESET}",
+        (
+            f"🚫  {_C.B_YELLOW}REJEITADO{_C.RESET}  "
+            + f"{_C.DIM}ml_id={_C.RESET}{_C.WHITE}{ml_id}{_C.RESET}  "
+            + f"{_C.DIM}score={_C.RESET}{_C.B_RED}{score}{_C.RESET}"
+        ),
         f"   {_C.DIM}▸ Motivo:{_C.RESET} {_C.YELLOW}{reason}{_C.RESET}",
     ]
 
@@ -329,18 +350,17 @@ def _render_product_rejected(ts: str, kv: dict) -> str:
         lines.append(f"   {_C.DIM}▸ Breakdown:{_C.RESET}")
         for key, label in _BD_LABELS:
             val = breakdown.get(key, 0)
-            bar_filled = (
-                int(val / 30 * 10)
-                if key == "discount"
-                else int(val / 15 * 10)
-                if key in ("badge", "rating")
-                else int(val / 10 * 10)
-            )
+            if key == "discount":
+                bar_filled = int(val / 30 * 10)
+            elif key in ("badge", "rating"):
+                bar_filled = int(val / 15 * 10)
+            else:
+                bar_filled = int(val / 10 * 10)
             bar = f"{'█' * bar_filled}{'░' * (10 - bar_filled)}"
             color = _C.B_GREEN if val > 0 else _C.DIM
             lines.append(
                 f"     {_C.DIM}{label}{_C.RESET}"
-                f"{color}{bar} {val:>5.1f}pt{_C.RESET}"
+                + f"{color}{bar} {val:>5.1f}pt{_C.RESET}"
             )
 
     if url:

@@ -7,7 +7,7 @@ Autenticação: valida JWT do Supabase Auth via header Authorization: Bearer <to
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 import structlog
@@ -48,6 +48,12 @@ async def _verify_supabase_jwt(request: Request) -> dict:
     return resp.json()
 
 
+# Type alias para dependency injection — resolve S8410
+CurrentUser = Annotated[dict, Depends(_verify_supabase_jwt)]
+
+_NOT_FOUND = "Oferta não encontrada"
+
+
 # ---------------------------------------------------------------------------
 # Schemas Pydantic
 # ---------------------------------------------------------------------------
@@ -80,11 +86,11 @@ class SettingsUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.patch("/offers/{offer_id}/status")
+@router.patch("/offers/{offer_id}/status", responses={400: {"description": "Status inválido"}, 404: {"description": _NOT_FOUND}})
 async def update_offer_status(
     offer_id: str,
     body: StatusUpdate,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Atualiza o status de uma oferta (approved/rejected/pending)."""
     if body.status not in ("approved", "rejected", "pending"):
@@ -96,15 +102,15 @@ async def update_offer_status(
         else:
             ok = await _update_scored_offer(storage, offer_id, status=body.status)
         if not ok:
-            raise HTTPException(status_code=404, detail="Oferta não encontrada")
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return {"ok": True, "status": body.status}
 
 
-@router.patch("/offers/{offer_id}/notes")
+@router.patch("/offers/{offer_id}/notes", responses={404: {"description": _NOT_FOUND}})
 async def update_offer_notes(
     offer_id: str,
     body: NotesUpdate,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Adiciona/edita notas do admin em uma oferta."""
     async with StorageManager() as storage:
@@ -112,27 +118,27 @@ async def update_offer_notes(
             storage, offer_id, admin_notes=body.admin_notes
         )
         if not ok:
-            raise HTTPException(status_code=404, detail="Oferta não encontrada")
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return {"ok": True}
 
 
-@router.delete("/offers/{offer_id}")
+@router.delete("/offers/{offer_id}", responses={404: {"description": _NOT_FOUND}})
 async def delete_offer(
     offer_id: str,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Remove uma oferta da fila (marca como rejected)."""
     async with StorageManager() as storage:
         ok = await storage.discard_offer(offer_id, reason="admin_deleted")
         if not ok:
-            raise HTTPException(status_code=404, detail="Oferta não encontrada")
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return {"ok": True}
 
 
-@router.post("/offers/bulk")
+@router.post("/offers/bulk", responses={400: {"description": "Ação inválida"}})
 async def bulk_action(
     body: BulkAction,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Ação em lote: aprovar, rejeitar ou deletar múltiplas ofertas."""
     if body.action not in ("approve", "reject", "delete"):
@@ -166,7 +172,7 @@ async def bulk_action(
 
 @router.get("/queue")
 async def get_admin_queue(
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Retorna a fila completa com prioridade e notas do admin."""
     async with StorageManager() as storage:
@@ -177,10 +183,10 @@ async def get_admin_queue(
     return {"queue": offers}
 
 
-@router.post("/queue/reorder")
+@router.post("/queue/reorder", responses={404: {"description": _NOT_FOUND}})
 async def reorder_queue(
     body: QueueReorder,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Define a prioridade de uma oferta na fila."""
     async with StorageManager() as storage:
@@ -188,33 +194,33 @@ async def reorder_queue(
             storage, body.offer_id, queue_priority=body.new_priority
         )
         if not ok:
-            raise HTTPException(status_code=404, detail="Oferta não encontrada")
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return {"ok": True, "queue_priority": body.new_priority}
 
 
-@router.post("/queue/{offer_id}/skip")
+@router.post("/queue/{offer_id}/skip", responses={404: {"description": _NOT_FOUND}})
 async def skip_offer(
     offer_id: str,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Move oferta para o final da fila (priority = -1)."""
     async with StorageManager() as storage:
         ok = await _update_scored_offer(storage, offer_id, queue_priority=-1)
         if not ok:
-            raise HTTPException(status_code=404, detail="Oferta não encontrada")
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return {"ok": True}
 
 
-@router.post("/queue/{offer_id}/pin")
+@router.post("/queue/{offer_id}/pin", responses={404: {"description": _NOT_FOUND}})
 async def pin_offer(
     offer_id: str,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Fixa oferta no topo da fila (priority = 999)."""
     async with StorageManager() as storage:
         ok = await _update_scored_offer(storage, offer_id, queue_priority=999)
         if not ok:
-            raise HTTPException(status_code=404, detail="Oferta não encontrada")
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return {"ok": True}
 
 
@@ -223,9 +229,9 @@ async def pin_offer(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/send-now")
+@router.post("/send-now", responses={404: {"description": "Fila vazia"}})
 async def send_now(
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Envia a próxima oferta da fila imediatamente."""
     from src.distributor.sender import send_next_offer
@@ -237,10 +243,10 @@ async def send_now(
     return {"ok": True, "message": "Oferta enviada"}
 
 
-@router.post("/send-now/{offer_id}")
+@router.post("/send-now/{offer_id}", responses={500: {"description": "Falha ao enviar"}})
 async def send_specific_offer(
     offer_id: str,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Fixa uma oferta no topo e envia imediatamente."""
     from src.distributor.sender import send_next_offer
@@ -255,7 +261,7 @@ async def send_specific_offer(
 
 @router.post("/scrape-now")
 async def scrape_now(
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Dispara um ciclo de scraping imediato."""
     from src.main import run_pipeline
@@ -272,11 +278,11 @@ async def scrape_now(
 
 @router.get("/settings")
 async def get_settings(
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Retorna configurações editáveis do sistema."""
     async with StorageManager() as storage:
-        overrides = await _get_admin_settings(storage)
+        overrides = _get_admin_settings(storage)
 
     return {
         "current": {
@@ -296,12 +302,12 @@ async def get_settings(
 @router.patch("/settings")
 async def update_settings(
     body: SettingsUpdate,
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Atualiza configurações do admin (persistidas em admin_settings)."""
     async with StorageManager() as storage:
         for key, value in body.settings.items():
-            await _set_admin_setting(storage, key, value)
+            _set_admin_setting(storage, key, value)
     return {"ok": True}
 
 
@@ -312,33 +318,33 @@ async def update_settings(
 
 @router.get("/analytics/daily")
 async def analytics_daily(
+    _user: CurrentUser,
     days: int = 30,
-    _user: dict = Depends(_verify_supabase_jwt),
 ):
     """Métricas diárias para gráficos trend."""
     async with StorageManager() as storage:
-        data = await _call_rpc(storage, "fn_daily_metrics", {"days_back": days})
+        data = _call_rpc(storage,"fn_daily_metrics", {"days_back": days})
     return {"data": data}
 
 
 @router.get("/analytics/hourly")
 async def analytics_hourly(
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Envios por hora de hoje."""
     async with StorageManager() as storage:
-        data = await _call_rpc(storage, "fn_hourly_sends", {})
+        data = _call_rpc(storage,"fn_hourly_sends", {})
     return {"data": data}
 
 
 @router.get("/analytics/funnel")
 async def analytics_funnel(
+    _user: CurrentUser,
     hours: int = 24,
-    _user: dict = Depends(_verify_supabase_jwt),
 ):
     """Funil de conversão."""
     async with StorageManager() as storage:
-        data = await _call_rpc(storage, "fn_conversion_funnel", {"hours_back": hours})
+        data = _call_rpc(storage,"fn_conversion_funnel", {"hours_back": hours})
     return {"data": data}
 
 
@@ -349,7 +355,7 @@ async def analytics_funnel(
 
 @router.get("/health")
 async def admin_health(
-    _user: dict = Depends(_verify_supabase_jwt),
+    _user: CurrentUser,
 ):
     """Health check detalhado com status dos backends."""
     async with StorageManager() as storage:
@@ -397,7 +403,7 @@ async def _update_scored_offer(
             return False
 
 
-async def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
+def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
     """Lê todas as configurações do admin_settings."""
     if storage._using_supabase:
         try:
@@ -408,7 +414,7 @@ async def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
     return {}
 
 
-async def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
+def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
     """Upsert de uma configuração no admin_settings."""
     if storage._using_supabase:
         try:
@@ -423,7 +429,7 @@ async def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> b
     return False
 
 
-async def _call_rpc(
+def _call_rpc(
     storage: StorageManager,
     fn_name: str,
     params: dict[str, Any],

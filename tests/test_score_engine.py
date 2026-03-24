@@ -590,7 +590,7 @@ class TestWeightValidation:
     def test_valid_weights_no_warning(self, mock_settings):
         """Pesos que somam 100 nao devem gerar warning."""
         # mock_settings ja tem pesos que somam 100
-        engine = ScoreEngine()
+        ScoreEngine()
         # Se chegou aqui sem erro, tudo OK
 
     def test_invalid_weights_logs_warning(self):
