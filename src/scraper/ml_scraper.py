@@ -155,14 +155,25 @@ class MLScraper(BaseScraper):
         self.card_screenshots: dict[str, bytes] = {}
 
     def _default_sources(self) -> list[ScrapeSource]:
-        """Gera fontes padrão: Ofertas do Dia."""
-        return [
-            ScrapeSource(
-                name="ofertas_do_dia",
-                url=OFERTAS_URL,
-                max_pages=settings.scraper.max_pages,
-            )
-        ]
+        """Carrega todas as fontes do ml_categories.json."""
+        import json
+        from src.config import ROOT_DIR
+
+        categories_file = ROOT_DIR / "ml_categories.json"
+        with categories_file.open() as f:
+            data = json.load(f)
+
+        sources = []
+        for section in data.values():
+            for entry in section:
+                sources.append(
+                    ScrapeSource(
+                        name=entry["source"],
+                        url=entry["url"],
+                        max_pages=settings.scraper.max_pages,
+                    )
+                )
+        return sources
 
     async def _new_page(self) -> Page:
         """Cria nova página com playwright-stealth aplicado."""
@@ -184,81 +195,66 @@ class MLScraper(BaseScraper):
         Coleta ofertas de todas as fontes configuradas.
 
         Retorna lista de ScrapedProduct com todos os campos extraídos.
-        Se storage foi fornecido, faz dedup e persistência inline.
+        Se storage foi fornecido, classifica apenas produtos novos via AI.
         """
         start = time.monotonic()
         all_products: list[ScrapedProduct] = []
-        total_dupes = 0
+        total_existing = 0
         total_errors = 0
 
         async with self:
-            page = await self._new_page()
+            sem = asyncio.Semaphore(settings.scraper.max_concurrent)
 
-            try:
-                for source in self.sources:
+            async def scrape_source_sem(source: ScrapeSource):
+                async with sem:
+                    page = await self._new_page()
                     logger.info(
                         "scraping_source",
                         source=source.name,
                         max_pages=source.max_pages,
                     )
-
                     try:
-                        products, dupes, errors = await self._scrape_source(
-                            page, source
-                        )
-                        all_products.extend(products)
-                        total_dupes += dupes
-                        total_errors += errors
-
-                        logger.info(
-                            "source_done",
-                            source=source.name,
-                            count=len(products),
-                        )
+                        products, existing, errors = await self._scrape_source(page, source)
+                        logger.info("source_done", source=source.name, count=len(products))
+                        return products, existing, errors
                     except CaptchaError:
                         logger.error("captcha_blocked", source=source.name)
                         if self._storage:
                             await self._storage.log_event(
-                                "scrape_error",
-                                {
-                                    "reason": "captcha",
-                                    "source": source.name,
-                                },
+                                "scrape_error", {"reason": "captcha", "source": source.name}
                             )
-                        total_errors += 1
+                        return [], 0, 1
                     except RateLimitError:
                         logger.error("rate_limited", source=source.name)
                         if self._storage:
                             await self._storage.log_event(
-                                "scrape_error",
-                                {
-                                    "reason": "rate_limit",
-                                    "source": source.name,
-                                },
+                                "scrape_error", {"reason": "rate_limit", "source": source.name}
                             )
-                        total_errors += 1
+                        return [], 0, 1
                     except Exception as exc:
-                        logger.error(
-                            "source_failed",
-                            source=source.name,
-                            error=str(exc),
-                        )
-                        total_errors += 1
+                        logger.error("source_failed", source=source.name, error=str(exc))
+                        return [], 0, 1
+                    finally:
+                        await page.close()
 
-                    # Delay entre fontes + rotação segura de contexto
-                    await self._random_delay(extra_min=1.0, extra_max=2.0)
-                    await page.close()
-                    await self._rotate_context_if_needed()
-                    page = await self._new_page()
+            results = await asyncio.gather(*[scrape_source_sem(s) for s in self.sources])
+            for products, existing, errors in results:
+                all_products.extend(products)
+                total_existing += existing
+                total_errors += errors
 
-            finally:
-                await page.close()
+        # Dedup cross-page: mesmo ml_id pode aparecer em várias fontes
+        seen: dict[str, ScrapedProduct] = {}
+        for p in all_products:
+            seen[p.ml_id] = p  # mantém última ocorrência (dados mais frescos)
+        all_products = list(seen.values())
 
         elapsed = round(time.monotonic() - start, 1)
         logger.info(
             "scraping_done",
             total=len(all_products),
-            dupes_skipped=total_dupes,
+            existing_in_db=total_existing,
+            ai_classification_skipped=total_existing,
             errors=total_errors,
             elapsed_seconds=elapsed,
         )
@@ -269,7 +265,7 @@ class MLScraper(BaseScraper):
                 {
                     "total": len(all_products),
                     "sources": len(self.sources),
-                    "dupes_skipped": total_dupes,
+                    "existing_in_db": total_existing,
                     "elapsed_seconds": elapsed,
                 },
             )
@@ -286,10 +282,10 @@ class MLScraper(BaseScraper):
         """
         Coleta produtos de uma única fonte em até max_pages páginas.
 
-        Retorna (products, dupes_skipped, parse_errors).
+        Retorna (products, existing_in_db, parse_errors).
         """
         products: list[ScrapedProduct] = []
-        dupes_skipped = 0
+        existing_in_db = 0
         parse_errors = 0
         url = self._build_url(source, 1)
 
@@ -339,13 +335,33 @@ class MLScraper(BaseScraper):
                 raw_count=len(page_products),
             )
 
-            # AI Enrichement for 'Outros' categories
-            page_products = await self._enrich_categories_with_ai(page_products)
+            # Verifica quais ml_ids já existem (para pular classificação AI)
+            existing_ids: set[str] = set()
+            if self._storage:
+                try:
+                    existing_ids = await self._storage.check_duplicates_batch(
+                        [p.ml_id for p in page_products]
+                    )
+                except Exception as exc:
+                    logger.warning("check_duplicates_failed", error=str(exc))
 
-            # Dedup + persistência batch (3 queries ao invés de N×3)
-            new_products, page_dupes = await self._save_page_products_batch(page_products)
-            products.extend(new_products)
-            dupes_skipped += page_dupes
+            new_page = [p for p in page_products if p.ml_id not in existing_ids]
+            existing_page = [p for p in page_products if p.ml_id in existing_ids]
+
+            if existing_page:
+                logger.info(
+                    "ai_classification_skipped",
+                    reason="products_already_in_db",
+                    count=len(existing_page),
+                )
+
+            # AI enrichment apenas para produtos NOVOS
+            new_page = await self._enrich_categories_with_ai(new_page)
+
+            # Retorna TODOS para o pipeline (novos + existentes)
+            products.extend(new_page)
+            products.extend(existing_page)
+            existing_in_db += len(existing_page)
 
             if not page_products:
                 break
@@ -363,7 +379,7 @@ class MLScraper(BaseScraper):
             url = next_url
             await self._random_delay()
 
-        return products, dupes_skipped, parse_errors
+        return products, existing_in_db, parse_errors
 
     async def _save_page_products_batch(
         self, page_products: list[ScrapedProduct]

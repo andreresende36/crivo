@@ -491,20 +491,14 @@ class TestParsePageLegacy:
 
 class TestDeduplication:
     @pytest.mark.asyncio
-    async def test_skips_known_products(self, html_poly_cards):
+    async def test_existing_products_returned_but_skip_ai(self, html_poly_cards):
+        """Produtos existentes no banco continuam no pipeline mas pulam classificação AI."""
         mock_storage = AsyncMock()
         # MLB111222333 já existe, os outros não
         mock_storage.check_duplicates_batch = AsyncMock(return_value={"MLB111222333"})
-        mock_storage.upsert_products_batch = AsyncMock(
-            return_value={
-                "MLB444555666": "uuid-2",
-                "MLB777888999": "uuid-3",
-            }
-        )
-        mock_storage.add_price_history_batch = AsyncMock(return_value=True)
         mock_storage.log_event = AsyncMock(return_value=True)
 
-        scraper = MLScraper(storage=mock_storage)
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE], storage=mock_storage)
 
         mock_page = AsyncMock()
         mock_page.content = AsyncMock(return_value=html_poly_cards)
@@ -548,14 +542,13 @@ class TestDeduplication:
         ):
             products = await scraper.scrape()
 
-        # MLB111222333 filtrado (dupe), restam 2
-        assert len(products) == 2
-        assert all(p.ml_id != "MLB111222333" for p in products)
+        # V3: TODOS os 3 produtos retornados (existentes não são mais descartados)
+        assert len(products) == 3
+        ml_ids = {p.ml_id for p in products}
+        assert "MLB111222333" in ml_ids
 
-        # check_duplicates_batch chamado 1 vez com todos os 3
+        # check_duplicates_batch chamado 1 vez (1 source × 1 page)
         mock_storage.check_duplicates_batch.assert_called_once()
-        # upsert_products_batch chamado 1 vez com os 2 novos
-        mock_storage.upsert_products_batch.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_storage_returns_all(self, html_poly_cards):
@@ -600,7 +593,7 @@ class TestRetryAndErrors:
         mock_storage = AsyncMock()
         mock_storage.log_event = AsyncMock(return_value=True)
 
-        scraper = MLScraper(storage=mock_storage)
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE], storage=mock_storage)
 
         mock_page = AsyncMock()
         mock_page.close = AsyncMock()
@@ -764,21 +757,13 @@ class TestScrapeIntegration:
         assert len(products) == 3
 
     @pytest.mark.asyncio
-    async def test_persistence_saves_all_products(self, html_poly_cards):
-        """Verifica que cada produto novo é salvo via storage."""
+    async def test_scraper_no_longer_persists_inline(self, html_poly_cards):
+        """V3: scraper não faz mais upsert/price_history — persistência é do pipeline."""
         mock_storage = AsyncMock()
         mock_storage.check_duplicates_batch = AsyncMock(return_value=set())
-        mock_storage.upsert_products_batch = AsyncMock(
-            return_value={
-                "MLB111222333": "uuid-1",
-                "MLB444555666": "uuid-2",
-                "MLB777888999": "uuid-3",
-            }
-        )
-        mock_storage.add_price_history_batch = AsyncMock(return_value=True)
         mock_storage.log_event = AsyncMock(return_value=True)
 
-        scraper = MLScraper(storage=mock_storage)
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE], storage=mock_storage)
 
         mock_page = AsyncMock()
         mock_page.content = AsyncMock(return_value=html_poly_cards)
@@ -823,15 +808,17 @@ class TestScrapeIntegration:
             products = await scraper.scrape()
 
         assert len(products) == 3
-        mock_storage.upsert_products_batch.assert_called_once()
-        mock_storage.add_price_history_batch.assert_called_once()
-        # Log de sucesso ao final
+        # V3: scraper só faz check_duplicates, não faz upsert nem price_history
+        mock_storage.check_duplicates_batch.assert_called_once()
+        assert not mock_storage.upsert_products_batch.called
+        assert not mock_storage.add_price_history_batch.called
+        # Log de sucesso ao final com chave existing_in_db
         mock_storage.log_event.assert_any_call(
             "scrape_success",
             {
                 "total": 3,
                 "sources": 1,
-                "dupes_skipped": 0,
+                "existing_in_db": 0,
                 "elapsed_seconds": pytest.approx(0, abs=10),
             },
         )

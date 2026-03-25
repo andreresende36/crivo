@@ -2,7 +2,7 @@
 Crivo — Pipeline de Scraping
 Coleta ofertas do Mercado Livre, pontua, salva no banco.
 
-Fluxo: scraping cards → dedup → fake filter → score → save → affiliate links.
+Fluxo: scraping cards → fake filter → dedup (com persistência) → score → save → affiliate links.
 O envio ao Telegram é feito pelo sender_loop em runner.py.
 """
 
@@ -29,10 +29,10 @@ logger = structlog.get_logger(__name__)
 
 
 async def _run_scraping(
-    stats: dict[str, Any], timings: dict[str, float]
+    storage: StorageManager, stats: dict[str, Any], timings: dict[str, float]
 ) -> tuple[list, MLScraper]:
     """Etapa 1: Coleta ofertas via scraper."""
-    scraper = MLScraper()
+    scraper = MLScraper(storage=storage)
     alert_bot = AlertBot()
     t0 = time.time()
     try:
@@ -56,25 +56,56 @@ async def _filter_products(
     stats: dict[str, Any],
     timings: dict[str, float],
 ) -> list:
-    """Etapas 2-3: Deduplicação + filtro de desconto falso."""
-    t0 = time.time()
-    recent_ids = await storage.get_recently_sent_ids(hours=24)
-    new_products = [p for p in all_products if p.ml_id not in recent_ids]
-    timings["dedup"] = round(time.time() - t0, 2)
-    logger.info("dedup_done", total=len(all_products), new=len(new_products))
+    """Filtro de desconto falso → Dedup 24h (com persistência do dedup path)."""
 
+    # 1. Fake discount filter (ALL products)
     t0 = time.time()
     fake_detector = FakeDiscountDetector()
-    fake_results = fake_detector.check_batch(new_products)
-    genuine_products = [p for p, r in fake_results if not r.is_fake]
-    stats["new"] = len(genuine_products)
+    fake_results = fake_detector.check_batch(all_products)
+    genuine = [p for p, r in fake_results if not r.is_fake]
     timings["fake_filter"] = round(time.time() - t0, 2)
     logger.info(
         "fake_filter_done",
-        genuine=len(genuine_products),
-        fake=len(new_products) - len(genuine_products),
+        genuine=len(genuine),
+        fake=len(all_products) - len(genuine),
     )
-    return genuine_products
+
+    # 2. Dedup por envios recentes (24h)
+    t0 = time.time()
+    recent_ids = await storage.get_recently_sent_ids(hours=24)
+    fresh = [p for p in genuine if p.ml_id not in recent_ids]
+    dedup = [p for p in genuine if p.ml_id in recent_ids]
+    timings["dedup"] = round(time.time() - t0, 2)
+    logger.info(
+        "dedup_done",
+        total=len(genuine),
+        fresh=len(fresh),
+        dedup=len(dedup),
+    )
+
+    # 3. Dedup path: upsert products + price history (sem scored_offer)
+    if dedup:
+        t0 = time.time()
+        try:
+            ids = await storage.upsert_products_batch(dedup)
+            entries = [
+                {
+                    "product_id": ids[p.ml_id],
+                    "price": p.price,
+                    "original_price": p.original_price,
+                }
+                for p in dedup
+                if p.ml_id in ids
+            ]
+            await storage.add_price_history_batch(entries)
+            stats["dedup_persisted"] = len(ids)
+            logger.info("dedup_path_persisted", count=len(ids))
+        except Exception as exc:
+            logger.warning("dedup_path_persist_failed", error=str(exc))
+        timings["dedup_persist"] = round(time.time() - t0, 2)
+
+    stats["new"] = len(fresh)
+    return fresh
 
 
 def _score_products(
@@ -248,8 +279,9 @@ async def run_pipeline(storage: StorageManager) -> dict:
     """
     Executa o pipeline de scraping do Crivo.
 
-    Coleta ofertas dos cards de listagem, filtra duplicatas e descontos falsos,
-    pontua e salva no banco. O envio é feito separadamente pelo sender.
+    Coleta ofertas dos cards de listagem, filtra descontos falsos, dedup 24h
+    (com persistência de price history), pontua e salva no banco.
+    O envio é feito separadamente pelo sender.
 
     Args:
         storage: Instância do StorageManager (compartilhada com o sender).
@@ -263,6 +295,7 @@ async def run_pipeline(storage: StorageManager) -> dict:
         "approved": 0,
         "rejected": 0,
         "saved": 0,
+        "dedup_persisted": 0,
         "affiliate_links": 0,
         "errors": 0,
     }
@@ -270,7 +303,7 @@ async def run_pipeline(storage: StorageManager) -> dict:
 
     logger.info("pipeline_start", env=settings.env)
 
-    all_products, scraper = await _run_scraping(stats, timings)
+    all_products, scraper = await _run_scraping(storage, stats, timings)
     if not all_products:
         logger.warning("no_products_scraped")
         return stats
