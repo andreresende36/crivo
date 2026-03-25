@@ -79,11 +79,14 @@
       "Bash(python3 -m json.tool)",
       "mcp__supabase__get_project_url",
       "mcp__supabase__get_publishable_keys",
-      "Bash(curl -s -X POST http://localhost:8000/api/admin/scrape-now)"
+      "Bash(curl -s -X POST http://localhost:8000/api/admin/scrape-now)",
+      "mcp__sonarqube__markIssueWontFix",
+      "mcp__sonarqube__issues"
     ]
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
-    "supabase"
+    "supabase",
+    "sonarqube"
   ]
 }
