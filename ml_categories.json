@@ -1,0 +1,160 @@
+{
+  "promotion_type": [
+    {
+      "source": "oferta_relampago",
+      "name": "Oferta relâmpago",
+      "url": "https://www.mercadolivre.com.br/ofertas?promotion_type=lightning"
+    },
+    {
+      "source": "oferta_do_dia",
+      "name": "Oferta do dia",
+      "url": "https://www.mercadolivre.com.br/ofertas?promotion_type=deal_of_the_day"
+    }
+  ],
+  "payment": [
+    {
+      "source": "parcelamento_sem_juros",
+      "name": "Parcelamento sem juros",
+      "url": "https://www.mercadolivre.com.br/ofertas?installments=yes"
+    }
+  ],
+  "shipping_cost": [
+    {
+      "source": "frete_gratis",
+      "name": "Grátis",
+      "url": "https://www.mercadolivre.com.br/ofertas?shipping_cost=free"
+    }
+  ],
+  "categories": [
+    {
+      "source": "acessorios_para_veiculos",
+      "name": "Acessórios para Veículos",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB5672"
+    },
+    {
+      "source": "agro",
+      "name": "Agro",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB271599"
+    },
+    {
+      "source": "alimentos_e_bebidas",
+      "name": "Alimentos e Bebidas",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1403"
+    },
+    {
+      "source": "arte_papelaria_e_armarinho",
+      "name": "Arte, Papelaria e Armarinho",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1368"
+    },
+    {
+      "source": "bebes",
+      "name": "Bebês",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1384"
+    },
+    {
+      "source": "beleza_e_cuidado_pessoal",
+      "name": "Beleza e Cuidado Pessoal",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1246"
+    },
+    {
+      "source": "brinquedos_e_hobbies",
+      "name": "Brinquedos e Hobbies",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1132"
+    },
+    {
+      "source": "calcados_roupas_e_bolsas",
+      "name": "Calçados, Roupas e Bolsas",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1430"
+    },
+    {
+      "source": "casa_moveis_e_decoracao",
+      "name": "Casa, Móveis e Decoração",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1574"
+    },
+    {
+      "source": "celulares_e_telefones",
+      "name": "Celulares e Telefones",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1051"
+    },
+    {
+      "source": "construcao",
+      "name": "Construção",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1501"
+    },
+    {
+      "source": "cameras_e_acessorios",
+      "name": "Câmeras e Acessórios",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1039"
+    },
+    {
+      "source": "eletrodomesticos",
+      "name": "Eletrodomésticos",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB5726"
+    },
+    {
+      "source": "eletronicos_audio_e_video",
+      "name": "Eletrônicos, Áudio e Vídeo",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1000"
+    },
+    {
+      "source": "esportes_e_fitness",
+      "name": "Esportes e Fitness",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1276"
+    },
+    {
+      "source": "ferramentas",
+      "name": "Ferramentas",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB186864"
+    },
+    {
+      "source": "festas_e_lembrancinhas",
+      "name": "Festas e Lembrancinhas",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1168"
+    },
+    {
+      "source": "games",
+      "name": "Games",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1144"
+    },
+    {
+      "source": "industria_e_comercio",
+      "name": "Indústria e Comércio",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1499"
+    },
+    {
+      "source": "informatica",
+      "name": "Informática",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1648"
+    },
+    {
+      "source": "instrumentos_musicais",
+      "name": "Instrumentos Musicais",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1182"
+    },
+    {
+      "source": "joias_e_relogios",
+      "name": "Joias e Relógios",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB3937"
+    },
+    {
+      "source": "livros_revistas_e_comics",
+      "name": "Livros, Revistas e Comics",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1196"
+    },
+    {
+      "source": "mais_categorias",
+      "name": "Mais Categorias",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1953"
+    },
+    {
+      "source": "pet_shop",
+      "name": "Pet Shop",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB1071"
+    },
+    {
+      "source": "saude",
+      "name": "Saúde",
+      "url": "https://www.mercadolivre.com.br/ofertas?category=MLB264586"
+    }
+  ]
+}
