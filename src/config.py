@@ -290,6 +290,109 @@ class TitleReviewConfig:
 
 
 # ---------------------------------------------------------------------------
+# Fontes de Scraping (seleção individual por booleano)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SourcesConfig:
+    # Tipos de promoção
+    oferta_relampago: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_OFERTA_RELAMPAGO", "false").lower() == "true"
+    )
+    oferta_do_dia: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_OFERTA_DO_DIA", "false").lower() == "true"
+    )
+    # Pagamento
+    parcelamento_sem_juros: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_PARCELAMENTO_SEM_JUROS", "false").lower() == "true"
+    )
+    # Frete
+    frete_gratis: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_FRETE_GRATIS", "false").lower() == "true"
+    )
+    # Categorias
+    acessorios_para_veiculos: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_ACESSORIOS_PARA_VEICULOS", "false").lower() == "true"
+    )
+    agro: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_AGRO", "false").lower() == "true"
+    )
+    alimentos_e_bebidas: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_ALIMENTOS_E_BEBIDAS", "false").lower() == "true"
+    )
+    arte_papelaria_e_armarinho: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_ARTE_PAPELARIA_E_ARMARINHO", "false").lower() == "true"
+    )
+    bebes: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_BEBES", "false").lower() == "true"
+    )
+    beleza_e_cuidado_pessoal: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_BELEZA_E_CUIDADO_PESSOAL", "false").lower() == "true"
+    )
+    brinquedos_e_hobbies: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_BRINQUEDOS_E_HOBBIES", "false").lower() == "true"
+    )
+    calcados_roupas_e_bolsas: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_CALCADOS_ROUPAS_E_BOLSAS", "false").lower() == "true"
+    )
+    cameras_e_acessorios: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_CAMERAS_E_ACESSORIOS", "false").lower() == "true"
+    )
+    casa_moveis_e_decoracao: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_CASA_MOVEIS_E_DECORACAO", "false").lower() == "true"
+    )
+    celulares_e_telefones: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_CELULARES_E_TELEFONES", "false").lower() == "true"
+    )
+    construcao: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_CONSTRUCAO", "false").lower() == "true"
+    )
+    eletrodomesticos: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_ELETRODOMESTICOS", "false").lower() == "true"
+    )
+    eletronicos_audio_e_video: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_ELETRONICOS_AUDIO_E_VIDEO", "false").lower() == "true"
+    )
+    esportes_e_fitness: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_ESPORTES_E_FITNESS", "false").lower() == "true"
+    )
+    ferramentas: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_FERRAMENTAS", "false").lower() == "true"
+    )
+    festas_e_lembrancinhas: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_FESTAS_E_LEMBRANCINHAS", "false").lower() == "true"
+    )
+    games: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_GAMES", "false").lower() == "true"
+    )
+    industria_e_comercio: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_INDUSTRIA_E_COMERCIO", "false").lower() == "true"
+    )
+    informatica: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_INFORMATICA", "false").lower() == "true"
+    )
+    instrumentos_musicais: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_INSTRUMENTOS_MUSICAIS", "false").lower() == "true"
+    )
+    joias_e_relogios: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_JOIAS_E_RELOGIOS", "false").lower() == "true"
+    )
+    livros_revistas_e_comics: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_LIVROS_REVISTAS_E_COMICS", "false").lower() == "true"
+    )
+    mais_categorias: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_MAIS_CATEGORIAS", "false").lower() == "true"
+    )
+    pet_shop: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_PET_SHOP", "false").lower() == "true"
+    )
+    saude: bool = field(
+        default_factory=lambda: os.getenv("SOURCE_SAUDE", "false").lower() == "true"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Redis (estado compartilhado entre containers)
 # ---------------------------------------------------------------------------
 
@@ -333,6 +436,7 @@ class Settings:
     title_review: TitleReviewConfig = field(default_factory=TitleReviewConfig)
     sqlite: SQLiteConfig = field(default_factory=SQLiteConfig)
     redis: RedisConfig = field(default_factory=RedisConfig)
+    sources: SourcesConfig = field(default_factory=SourcesConfig)
 
     # Ambiente de execução
     env: str = field(default_factory=lambda: os.getenv("APP_ENV", "development"))

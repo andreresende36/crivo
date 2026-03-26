@@ -144,6 +144,8 @@ class SQLiteFallback:
             category_id       TEXT REFERENCES categories(id),
             badge_id          TEXT REFERENCES badges(id),
             marketplace_id    TEXT REFERENCES marketplaces(id),
+            enhanced_image_url TEXT,
+            image_status      TEXT DEFAULT 'pending',
             first_seen_at     TEXT DEFAULT (datetime('now')),
             last_seen_at      TEXT DEFAULT (datetime('now')),
             created_at        TEXT DEFAULT (datetime('now')),
@@ -168,6 +170,9 @@ class SQLiteFallback:
             final_score    INTEGER NOT NULL,
             status         TEXT NOT NULL DEFAULT 'pending',
             scored_at      TEXT DEFAULT (datetime('now')),
+            queue_priority INTEGER DEFAULT 0,
+            score_override INTEGER,
+            admin_notes    TEXT,
             synced         INTEGER DEFAULT 0
         );
 
@@ -178,6 +183,7 @@ class SQLiteFallback:
             channel          TEXT NOT NULL,
             sent_at          TEXT DEFAULT (datetime('now')),
             clicks           INTEGER DEFAULT 0,
+            triggered_by     TEXT DEFAULT 'auto',
             synced           INTEGER DEFAULT 0
         );
 
@@ -208,6 +214,8 @@ class SQLiteFallback:
         CREATE INDEX IF NOT EXISTS idx_so_status ON scored_offers(status);
         CREATE INDEX IF NOT EXISTS idx_so_score
             ON scored_offers(final_score DESC);
+        CREATE INDEX IF NOT EXISTS idx_so_queue_priority
+            ON scored_offers(queue_priority DESC);
         CREATE INDEX IF NOT EXISTS idx_so_synced ON scored_offers(synced);
 
         CREATE INDEX IF NOT EXISTS idx_se_scored
@@ -267,6 +275,12 @@ class SQLiteFallback:
         CREATE INDEX IF NOT EXISTS idx_te_created ON title_examples(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_te_synced ON title_examples(synced);
 
+        CREATE TABLE IF NOT EXISTS admin_settings (
+            key        TEXT PRIMARY KEY,
+            value      TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
         -- Views (SQLite usa datetime() em vez de NOW() - INTERVAL)
         DROP VIEW IF EXISTS vw_approved_unsent;
         CREATE VIEW vw_approved_unsent AS
@@ -288,19 +302,22 @@ class SQLiteFallback:
             b.name          AS badge,
             so.id           AS scored_offer_id,
             so.final_score,
-            so.scored_at
+            so.scored_at,
+            so.queue_priority,
+            so.score_override,
+            so.admin_notes
         FROM scored_offers so
         JOIN products p ON p.id = so.product_id
         LEFT JOIN categories c ON c.id = p.category_id
         LEFT JOIN badges b ON b.id = p.badge_id
         WHERE so.status = 'approved'
-          AND so.final_score >= 60
+          AND COALESCE(so.score_override, so.final_score) >= 60
           AND NOT EXISTS (
               SELECT 1 FROM sent_offers se
               WHERE se.scored_offer_id = so.id
                 AND se.sent_at >= datetime('now', '-24 hours')
           )
-        ORDER BY so.final_score DESC;
+        ORDER BY so.queue_priority DESC, COALESCE(so.score_override, so.final_score) DESC;
 
         CREATE VIEW IF NOT EXISTS vw_last_24h_summary AS
         SELECT
@@ -408,6 +425,51 @@ class SQLiteFallback:
         try:
             await self._db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_p_image_status ON products(image_status)"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
+
+        # Migrações incrementais — admin panel (migration 018)
+        for col, definition in [
+            ("queue_priority", "INTEGER DEFAULT 0"),
+            ("score_override", "INTEGER"),
+            ("admin_notes", "TEXT"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE scored_offers ADD COLUMN {col} {definition}"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # Coluna já existe
+
+        try:
+            await self._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_so_queue_priority "
+                "ON scored_offers(queue_priority DESC)"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
+
+        try:
+            await self._db.execute(
+                "ALTER TABLE sent_offers ADD COLUMN triggered_by TEXT DEFAULT 'auto'"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # Coluna já existe
+
+        try:
+            await self._db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_settings (
+                    key        TEXT PRIMARY KEY,
+                    value      TEXT NOT NULL,
+                    updated_at TEXT DEFAULT (datetime('now'))
+                )
+                """
             )
             await self._db.commit()
         except Exception:
@@ -1539,6 +1601,17 @@ class SQLiteFallback:
             if table == "products":
                 await self._resolve_product_fks_for_sync(client, all_data)
 
+            # Deduplica por conflict_col para evitar erro 21000 do PostgreSQL:
+            # "ON CONFLICT DO UPDATE command cannot affect row a second time".
+            # Ocorre quando o mesmo valor de conflict_col aparece mais de uma
+            # vez no mesmo batch (ex: múltiplas scored_offers do mesmo product_id
+            # acumuladas no SQLite entre ciclos). Mantemos a última ocorrência.
+            if conflict_col != "id":
+                seen: dict[str, tuple[str, dict]] = {}
+                for row_id, data in all_data:
+                    seen[data.get(conflict_col, row_id)] = (row_id, data)
+                all_data = list(seen.values())
+
             # Envio em chunks (batch upsert)
             for i in range(0, len(all_data), chunk_size):
                 chunk = all_data[i:i + chunk_size]
@@ -1555,12 +1628,24 @@ class SQLiteFallback:
                     else:
                         fail_ids.extend(chunk_ids)
                 except Exception as exc:
-                    logger.warning(
-                        f"sync_{table}_chunk_error",
-                        error=str(exc),
-                        chunk_start=i,
-                    )
-                    fail_ids.extend(chunk_ids)
+                    exc_str = str(exc)
+                    # Erro 23505: pkey já existe no Supabase — row foi sincronizada
+                    # anteriormente mas synced=0 não foi resetado (ex: falha no
+                    # commit SQLite após upsert bem-sucedido). Marca como synced.
+                    if "23505" in exc_str:
+                        logger.debug(
+                            f"sync_{table}_chunk_already_exists",
+                            chunk_start=i,
+                            count=len(chunk_ids),
+                        )
+                        ok_ids.extend(chunk_ids)
+                    else:
+                        logger.warning(
+                            f"sync_{table}_chunk_error",
+                            error=exc_str,
+                            chunk_start=i,
+                        )
+                        fail_ids.extend(chunk_ids)
 
             # Marca como sincronizados em batch
             if ok_ids:

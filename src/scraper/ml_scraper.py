@@ -155,7 +155,7 @@ class MLScraper(BaseScraper):
         self.card_screenshots: dict[str, bytes] = {}
 
     def _default_sources(self) -> list[ScrapeSource]:
-        """Carrega todas as fontes do ml_categories.json."""
+        """Carrega as fontes habilitadas do ml_categories.json via settings.sources."""
         import json
         from src.config import ROOT_DIR
 
@@ -166,13 +166,21 @@ class MLScraper(BaseScraper):
         sources = []
         for section in data.values():
             for entry in section:
-                sources.append(
-                    ScrapeSource(
-                        name=entry["source"],
-                        url=entry["url"],
-                        max_pages=settings.scraper.max_pages,
+                if getattr(settings.sources, entry["source"], False):
+                    sources.append(
+                        ScrapeSource(
+                            name=entry["source"],
+                            url=entry["url"],
+                            max_pages=settings.scraper.max_pages,
+                        )
                     )
-                )
+
+        if not sources:
+            logger.warning(
+                "no_sources_enabled",
+                hint="Habilite ao menos uma fonte no .env (ex: SOURCE_OFERTA_DO_DIA=true)",
+            )
+
         return sources
 
     async def _new_page(self) -> Page:
