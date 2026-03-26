@@ -280,88 +280,6 @@ class SQLiteFallback:
             value      TEXT NOT NULL,
             updated_at TEXT DEFAULT (datetime('now'))
         );
-
-        -- Views (SQLite usa datetime() em vez de NOW() - INTERVAL)
-        DROP VIEW IF EXISTS vw_approved_unsent;
-        CREATE VIEW vw_approved_unsent AS
-        SELECT
-            p.id            AS product_id,
-            p.ml_id,
-            p.title,
-            p.current_price,
-            p.original_price,
-            p.pix_price,
-            p.discount_percent,
-            p.free_shipping,
-            p.thumbnail_url,
-            p.product_url,
-            p.rating_stars,
-            p.rating_count,
-            p.installments_without_interest,
-            c.name          AS category,
-            b.name          AS badge,
-            so.id           AS scored_offer_id,
-            so.final_score,
-            so.scored_at,
-            so.queue_priority,
-            so.score_override,
-            so.admin_notes
-        FROM scored_offers so
-        JOIN products p ON p.id = so.product_id
-        LEFT JOIN categories c ON c.id = p.category_id
-        LEFT JOIN badges b ON b.id = p.badge_id
-        WHERE so.status = 'approved'
-          AND COALESCE(so.score_override, so.final_score) >= 60
-          AND NOT EXISTS (
-              SELECT 1 FROM sent_offers se
-              WHERE se.scored_offer_id = so.id
-                AND se.sent_at >= datetime('now', '-24 hours')
-          )
-        ORDER BY so.queue_priority DESC, COALESCE(so.score_override, so.final_score) DESC;
-
-        CREATE VIEW IF NOT EXISTS vw_last_24h_summary AS
-        SELECT
-            (SELECT COUNT(*) FROM products
-             WHERE last_seen_at >= datetime('now', '-24 hours')
-            ) AS products_scraped,
-            (SELECT COUNT(*) FROM scored_offers
-             WHERE scored_at >= datetime('now', '-24 hours')
-            ) AS offers_scored,
-            (SELECT COUNT(*) FROM scored_offers
-             WHERE scored_at >= datetime('now', '-24 hours')
-               AND status = 'approved'
-            ) AS offers_approved,
-            (SELECT COUNT(*) FROM sent_offers
-             WHERE sent_at >= datetime('now', '-24 hours')
-            ) AS offers_sent,
-            (SELECT ROUND(AVG(final_score), 1)
-             FROM scored_offers
-             WHERE scored_at >= datetime('now', '-24 hours')
-            ) AS avg_score,
-            (SELECT MAX(discount_percent)
-             FROM products
-             WHERE last_seen_at >= datetime('now', '-24 hours')
-            ) AS max_discount_pct;
-
-        CREATE VIEW IF NOT EXISTS vw_top_deals AS
-        SELECT
-            p.ml_id,
-            p.title,
-            p.current_price,
-            p.original_price,
-            p.pix_price,
-            p.discount_percent,
-            p.free_shipping,
-            c.name          AS category,
-            so.final_score,
-            p.product_url
-        FROM products p
-        JOIN scored_offers so ON so.product_id = p.id
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.last_seen_at >= datetime('now', '-6 hours')
-          AND so.status = 'approved'
-        ORDER BY so.final_score DESC, p.discount_percent DESC
-        LIMIT 20;
         """
         await self._db.executescript(schema)
         await self._db.commit()
@@ -481,6 +399,95 @@ class SQLiteFallback:
             await self._db.commit()
         except Exception:
             pass  # Coluna já removida ou nunca existiu
+
+        # Views — recriadas sempre APÓS todas as migrações incrementais para garantir
+        # que as colunas referenciadas (queue_priority, score_override, admin_notes)
+        # já existam em bancos previamente criados.
+        await self._db.executescript("""
+        DROP VIEW IF EXISTS vw_approved_unsent;
+        CREATE VIEW vw_approved_unsent AS
+        SELECT
+            p.id            AS product_id,
+            p.ml_id,
+            p.title,
+            p.current_price,
+            p.original_price,
+            p.pix_price,
+            p.discount_percent,
+            p.free_shipping,
+            p.thumbnail_url,
+            p.product_url,
+            p.rating_stars,
+            p.rating_count,
+            p.installments_without_interest,
+            c.name          AS category,
+            b.name          AS badge,
+            so.id           AS scored_offer_id,
+            so.final_score,
+            so.scored_at,
+            so.queue_priority,
+            so.score_override,
+            so.admin_notes
+        FROM scored_offers so
+        JOIN products p ON p.id = so.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        LEFT JOIN badges b ON b.id = p.badge_id
+        WHERE so.status = 'approved'
+          AND COALESCE(so.score_override, so.final_score) >= 60
+          AND NOT EXISTS (
+              SELECT 1 FROM sent_offers se
+              WHERE se.scored_offer_id = so.id
+                AND se.sent_at >= datetime('now', '-24 hours')
+          )
+        ORDER BY so.queue_priority DESC, COALESCE(so.score_override, so.final_score) DESC;
+
+        DROP VIEW IF EXISTS vw_last_24h_summary;
+        CREATE VIEW vw_last_24h_summary AS
+        SELECT
+            (SELECT COUNT(*) FROM products
+             WHERE last_seen_at >= datetime('now', '-24 hours')
+            ) AS products_scraped,
+            (SELECT COUNT(*) FROM scored_offers
+             WHERE scored_at >= datetime('now', '-24 hours')
+            ) AS offers_scored,
+            (SELECT COUNT(*) FROM scored_offers
+             WHERE scored_at >= datetime('now', '-24 hours')
+               AND status = 'approved'
+            ) AS offers_approved,
+            (SELECT COUNT(*) FROM sent_offers
+             WHERE sent_at >= datetime('now', '-24 hours')
+            ) AS offers_sent,
+            (SELECT ROUND(AVG(final_score), 1)
+             FROM scored_offers
+             WHERE scored_at >= datetime('now', '-24 hours')
+            ) AS avg_score,
+            (SELECT MAX(discount_percent)
+             FROM products
+             WHERE last_seen_at >= datetime('now', '-24 hours')
+            ) AS max_discount_pct;
+
+        DROP VIEW IF EXISTS vw_top_deals;
+        CREATE VIEW vw_top_deals AS
+        SELECT
+            p.ml_id,
+            p.title,
+            p.current_price,
+            p.original_price,
+            p.pix_price,
+            p.discount_percent,
+            p.free_shipping,
+            c.name          AS category,
+            so.final_score,
+            p.product_url
+        FROM products p
+        JOIN scored_offers so ON so.product_id = p.id
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE p.last_seen_at >= datetime('now', '-6 hours')
+          AND so.status = 'approved'
+        ORDER BY so.final_score DESC, p.discount_percent DESC
+        LIMIT 20;
+        """)
+        await self._db.commit()
 
         # Seed de dados canônicos (idempotente)
         await self._seed_lookup_tables()
