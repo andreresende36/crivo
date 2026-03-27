@@ -19,14 +19,16 @@ Mercado Livre → Scraper → Dedup → Fake Filter → Score Engine → DB → 
 |---|---|
 | Scraping | Playwright + BeautifulSoup + lxml |
 | Classificação de categoria | OpenRouter (Gemini 2.5 Flash) |
-| Geração de títulos e imagens | OpenRouter (Claude Haiku + modelos de imagem) |
+| Geração de títulos | OpenRouter (Claude Haiku 4.5) |
+| Geração de imagens lifestyle | OpenRouter (modelo configurável via `LIFESTYLE_IMAGE_MODEL`) |
 | Banco principal | Supabase (PostgreSQL) |
 | Banco fallback | SQLite local (dual-write + sync automático) |
+| Estado compartilhado | Redis (inter-container via `USE_REDIS_STATE`) |
 | API Backend | FastAPI + Uvicorn |
-| Painel Admin | Next.js 16 + TypeScript + Tailwind CSS + shadcn/ui |
+| Painel Admin | Next.js 16.2 + React 19 + TypeScript + Tailwind CSS + shadcn/ui |
 | Telegram | python-telegram-bot v21 |
 | WhatsApp | Evolution API |
-| Servidor | VPS Hostinger + Docker |
+| Servidor | VPS Hostinger + Docker Compose (4 containers: redis, scraper, sender, api, admin) |
 
 ---
 
@@ -35,20 +37,24 @@ Mercado Livre → Scraper → Dedup → Fake Filter → Score Engine → DB → 
 ```
 crivo/
 ├── src/
-│   ├── main.py                        # Pipeline principal (scrape → score → save)
-│   ├── runner.py                      # Processo long-running (scraper + sender loops)
-│   ├── sender.py                      # Envio de ofertas com distribuição temporal
+│   ├── runner.py                      # Runner monolítico (dev local — substitua por workers em prod)
 │   ├── config.py                      # Settings singleton (seções tipadas, lê .env)
-│   ├── logging_config.py              # Logging estruturado com rich + cores
+│   ├── logging_config.py              # Logging estruturado com structlog + rich + cores
+│   │
+│   ├── workers/                       # Entry points isolados por container (Docker)
+│   │   ├── api_worker.py              # Container `api` — serve FastAPI na porta 8000
+│   │   ├── scraper_worker.py          # Container `scraper` — pipeline a cada SCRAPER_INTERVAL
+│   │   └── sender_worker.py           # Container `sender` — envio temporal (8h-23h BRT)
 │   │
 │   ├── api/
-│   │   ├── monitor.py                 # FastAPI app (CORS, health, state)
+│   │   ├── monitor.py                 # FastAPI app (CORS, health, state via Redis)
 │   │   └── admin.py                   # Endpoints admin (CRUD ofertas, fila, analytics)
 │   │
 │   ├── scraper/
 │   │   ├── base_scraper.py            # Anti-bloqueio completo (UA rotation, delays, stealth)
 │   │   ├── ml_scraper.py              # Scraper ML — Ofertas do Dia, paginação, debug
-│   │   └── ml_classifier.py           # Classificador de categorias (keywords + fallback LLM)
+│   │   ├── ml_classifier.py           # Classificador de categorias (keywords + fallback LLM)
+│   │   └── pipeline.py                # Pipeline de scraping (scrape → fake filter → dedup → score → save)
 │   │
 │   ├── analyzer/
 │   │   ├── score_engine.py            # Score 0-100 pts (7 critérios, pesos dinâmicos)
@@ -56,12 +62,19 @@ crivo/
 │   │   └── card_debugger.py           # Relatório HTML com screenshots dos rejeitados
 │   │
 │   ├── distributor/
-│   │   ├── message_formatter.py       # Templates de mensagem para Telegram e WhatsApp
+│   │   ├── sender.py                  # Envio de ofertas com distribuição temporal
+│   │   ├── message_formatter.py       # Templates de mensagem (Style Guide v3) para Telegram e WhatsApp
+│   │   ├── message_validator.py       # Checklist de validação pré-envio (conformidade ao template)
+│   │   ├── title_generator.py         # Gerador de títulos catchy via Claude Haiku (7 fórmulas)
 │   │   ├── affiliate_links.py         # Builder de links ML com cache em DB
 │   │   ├── ml_affiliate_api.py        # Wrapper da API de afiliados do ML
 │   │   ├── telegram_bot.py            # Publicação nos grupos do Telegram
 │   │   ├── title_review_bot.py        # Revisão interativa de títulos via Telegram
 │   │   └── whatsapp_notifier.py       # Publicação nos grupos do WhatsApp
+│   │
+│   ├── image/
+│   │   ├── lifestyle_generator.py     # Geração de imagens lifestyle (2 passos: análise Claude → geração)
+│   │   └── image_storage.py           # Upload/recuperação de imagens via Supabase Storage
 │   │
 │   ├── database/
 │   │   ├── storage_manager.py         # Failover automático Supabase → SQLite
@@ -69,17 +82,19 @@ crivo/
 │   │   ├── sqlite_fallback.py         # Mirror local + coluna `synced` para sync offline
 │   │   ├── schema.sql                 # Schema principal (5 tabelas)
 │   │   ├── seeds.py                   # Dados canônicos: badges, categorias, marketplaces
+│   │   ├── title_examples.py          # Dataclasses para sistema de feedback de títulos
 │   │   └── exceptions.py              # SQLiteError, SupabaseError
 │   │
 │   ├── monitoring/
 │   │   ├── alert_bot.py               # Alertas para chat admin via Telegram Bot API
 │   │   ├── health_check.py            # Health check de todos os serviços externos
-│   │   └── state.py                   # Estado do monitor (timers, status)
+│   │   ├── redis_state.py             # Estado compartilhado entre containers via Redis
+│   │   └── state.py                   # Estado do monitor (timers, status — local ou Redis)
 │   │
 │   └── utils/
 │       └── password.py                # Hash de senhas (bcrypt)
 │
-├── admin/                             # Painel admin (Next.js)
+├── admin/                             # Painel admin (Next.js 16.2 + React 19)
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── layout.tsx             # Root layout (Inter font, ThemeProvider)
@@ -89,8 +104,9 @@ crivo/
 │   │   │       ├── page.tsx           # Dashboard (KPIs, top deals, status)
 │   │   │       ├── offers/page.tsx    # CRUD de ofertas com DataTable
 │   │   │       ├── queue/page.tsx     # Fila drag-and-drop
-│   │   │       ├── analytics/page.tsx # Analytics (em desenvolvimento)
-│   │   │       └── settings/page.tsx  # Configurações (em desenvolvimento)
+│   │   │       ├── monitor/           # Monitor do sistema (status dos workers, logs)
+│   │   │       ├── analytics/page.tsx # Analytics (métricas e gráficos)
+│   │   │       └── settings/page.tsx  # Configurações do sistema
 │   │   ├── components/
 │   │   │   ├── ui/                    # Componentes shadcn/ui
 │   │   │   ├── layout/               # Sidebar, Header, MobileNav, ThemeToggle
@@ -105,10 +121,10 @@ crivo/
 │   ├── package.json
 │   └── .env.local                     # Credenciais Supabase + URL FastAPI
 │
-├── supabase/migrations/               # Migrations SQL
+├── supabase/migrations/               # 21 migrations SQL
 ├── tests/
 ├── debug/rejected/                    # Relatórios HTML (gitignored)
-├── docker-compose.yml
+├── docker-compose.yml                 # 5 serviços: redis, scraper, sender, api, admin
 ├── Dockerfile
 ├── requirements.txt
 └── .env.example
@@ -122,10 +138,10 @@ crivo/
 
 - Python 3.11+
 - Node.js 18+ (para o painel admin)
-- Docker + Docker Compose (opcional, para deploy)
+- Docker + Docker Compose (recomendado para produção)
 - Conta no [Supabase](https://supabase.com) (gratuita)
 - Bot no Telegram (via [@BotFather](https://t.me/BotFather))
-- Chave do [OpenRouter](https://openrouter.ai) (classificacao + geracao de imagens)
+- Chave do [OpenRouter](https://openrouter.ai) (classificação de categoria + geração de títulos + imagens)
 
 ### 2. Clonar e instalar
 
@@ -175,6 +191,7 @@ No Supabase Dashboard → SQL Editor, executar nesta ordem:
 
 1. `src/database/schema.sql` — schema principal (5 tabelas)
 2. `supabase/migrations/018_admin_panel_schema.sql` — tabela admin_settings, colunas extras, views e RPCs
+3. Migrations 019-021 (title_examples, gender, installment/brand) — aplicar em ordem
 
 ### 5. Criar usuario admin
 
@@ -190,33 +207,43 @@ curl -X POST 'https://<seu-projeto>.supabase.co/auth/v1/admin/users' \
 
 ### 6. Executar
 
-```bash
-# --- Backend (API + Scraper + Sender) ---
+#### Desenvolvimento local (monolítico)
 
+```bash
 # Runner completo (scraper loop + sender loop + API na porta 8000)
 python -m src.runner
 
 # Ou apenas o pipeline de scraping (executa uma vez)
-python -m src.main
-
-# Com debug de screenshots dos rejeitados
-SCRAPER_DEBUG_SCREENSHOTS=true python -m src.main
+python -m src.scraper.pipeline
 
 # Health check de todos os servicos
 python -m src.monitoring.health_check
 
-# --- Painel Admin ---
-
+# Painel Admin
 cd admin
 npm run dev
 # Acesse http://localhost:3000
 ```
 
+#### Produção (Docker Compose)
+
+```bash
+# Sobe todos os containers: redis, scraper, sender, api, admin
+docker compose up -d
+
+# Ver logs de um serviço específico
+docker compose logs -f scraper
+docker compose logs -f sender
+docker compose logs -f api
+```
+
+Os workers se comunicam via Redis (`USE_REDIS_STATE=true` no compose). O container `api` lê o estado dos outros workers pelo Redis.
+
 ### 7. Acessar os recursos
 
 | Recurso | URL | Descricao |
 |---|---|---|
-| Painel Admin | http://localhost:3000 | Dashboard, ofertas, fila de envio |
+| Painel Admin | http://localhost:3000 | Dashboard, ofertas, fila de envio, monitor |
 | API Backend | http://localhost:8000 | FastAPI (docs em `/docs`) |
 | API Admin | http://localhost:8000/api/admin/* | Endpoints do painel admin |
 | Health Check | http://localhost:8000/api/health | Status dos servicos |
@@ -232,15 +259,16 @@ O painel admin permite controle visual completo sobre o pipeline de ofertas.
 - **Dashboard** — KPIs (produtos scrapeados, ofertas aprovadas, enviadas, score medio), top deals, status do sistema, acoes rapidas (forcar scraping, enviar proxima oferta)
 - **Ofertas** — DataTable com tabs (Todas/Aprovadas/Pendentes/Rejeitadas), busca por titulo, acoes inline (aprovar/rejeitar/deletar), acoes em lote, painel lateral com detalhes completos
 - **Fila de Envio** — Lista com drag-and-drop para reordenar prioridade, acoes por item (enviar agora, fixar no topo, pular), stats da fila (total, maior score, desconto medio)
-- **Analytics** — Metricas e graficos (em desenvolvimento)
-- **Config** — Configuracoes do sistema (em desenvolvimento)
+- **Monitor** — Status dos workers (scraper, sender, api), proximos eventos agendados, logs recentes
+- **Analytics** — Metricas e graficos (serie temporal, funil, distribuicao por categoria)
+- **Config** — Configuracoes do sistema editaveis pelo admin
 
 ### Design
 
-- Dark mode e light mode com toggle no header
-- Accent color: emerald (#10B981)
+- Tema cyberpunk deep purple com dark/light mode toggle
+- Sidebar colapsável no desktop, hamburger menu no mobile
 - Glass morphism nos cards (backdrop-blur)
-- Responsivo: sidebar fixa no desktop, hamburger menu no mobile
+- Responsivo para mobile e desktop
 
 ### Endpoints Admin (FastAPI)
 
@@ -277,11 +305,11 @@ GET    /api/admin/analytics/funnel      # Funil de conversao
 
 ## Schema de Banco
 
-6 tabelas no Supabase (5 espelhadas no SQLite local):
+6 tabelas no Supabase (5 espelhadas no SQLite local), 21 migrations aplicadas:
 
 | Tabela | Descricao |
 |---|---|
-| `products` | Produto unico por `ml_id` (UUID PK, trigger preserva `first_seen_at`) |
+| `products` | Produto unico por `ml_id` (UUID PK, trigger preserva `first_seen_at`, colunas: `pix_price`, `installments`, `brand`, `gender`) |
 | `price_history` | Historico de precos por produto |
 | `scored_offers` | Pontuacao de cada oferta + `queue_priority`, `score_override`, `admin_notes` |
 | `sent_offers` | Controle de dedup + `triggered_by` (auto/admin) |
@@ -320,6 +348,22 @@ Filtros hard (aplicados antes da pontuacao):
 | Qualidade do titulo | 10 | Heuristicas (comprimento, clareza, sem spam) |
 
 Criterios sem dados tem peso redistribuido dinamicamente para manter a escala 0-100 consistente.
+
+---
+
+## Title Generator — Style Guide v3
+
+O `title_generator.py` gera títulos catchy via Claude Haiku 4.5 (OpenRouter) com 7 fórmulas em rotação:
+
+- Urgência e escassez
+- Benefício direto
+- Comparação de preço
+- Chamada para ação
+- Social proof
+- Exclusividade
+- Humor/Criatividade
+
+O `message_validator.py` valida conformidade com o Style Guide antes do envio (soft check — loga warnings mas não bloqueia).
 
 ---
 
@@ -373,6 +417,8 @@ Com `SCRAPER_DEBUG_SCREENSHOTS=true` no `.env`, o sistema gera um relatorio HTML
 |---|---|---|
 | `APP_ENV` | `development` | `production` ativa Supabase exclusivo |
 | `TEST_MODE` | `false` | Relaxa filtros para gerar mais ofertas em teste |
+| `USE_REDIS_STATE` | `false` | Compartilha estado entre containers via Redis |
+| `REDIS_URL` | `redis://localhost:6379/0` | URL do Redis |
 | `SCORE_MIN_DISCOUNT_PCT` | `20` | Desconto minimo para entrar no score (%) |
 | `SCORE_MIN_SCORE` | `60` | Pontuacao minima para publicar (0-100) |
 | `SCRAPER_MAX_PAGES` | `10` | Maximo de paginas por fonte |
@@ -384,7 +430,7 @@ Com `SCRAPER_DEBUG_SCREENSHOTS=true` no `.env`, o sistema gera um relatorio HTML
 | `SENDER_MIN_INTERVAL` | `3` | Intervalo minimo entre envios (minutos) |
 | `SENDER_MAX_INTERVAL` | `6` | Intervalo maximo entre envios (minutos) |
 | `TITLE_REVIEW_ENABLED` | `false` | Ativa revisao de titulos pelo admin via Telegram |
-| `LIFESTYLE_IMAGE_MODEL` | `nano-banana-2` | Modelo de geracao de imagens lifestyle |
+| `LIFESTYLE_IMAGE_MODEL` | `nano-banana-2` | Modelo de geracao de imagens lifestyle (OpenRouter) |
 
 Ver `.env.example` para a lista completa com documentacao.
 
@@ -395,10 +441,10 @@ Ver `.env.example` para a lista completa com documentacao.
 ### ✅ Fase 1 — Base (concluida)
 
 - [x] Config singleton tipado com dataclasses
-- [x] Logging estruturado com rich + cores + truncamento
+- [x] Logging estruturado com structlog + rich + cores + truncamento
 - [x] BaseScraper com anti-bloqueio completo
 - [x] ML Scraper — Ofertas do Dia com paginacao e seletores unificados
-- [x] Classificador de categoria (keywords + fallback OpenRouter)
+- [x] Classificador de categoria (keywords + fallback OpenRouter/Gemini)
 - [x] Score Engine — 7 criterios com redistribuicao dinamica de pesos
 - [x] Detector de desconto falso — 5 heuristicas de pricejacking
 - [x] Banco dual-write Supabase + SQLite com sync automatico e failover
@@ -407,28 +453,33 @@ Ver `.env.example` para a lista completa com documentacao.
 - [x] Health check de todos os servicos
 - [x] Message formatter (templates Telegram + WhatsApp)
 - [x] Affiliate link builder com cache em DB
-- [x] Pipeline principal completo (scrape → dedup → fake filter → score → save)
+- [x] Pipeline de scraping extraido em `pipeline.py`
 - [x] Debug HTML com screenshots dos cards rejeitados
 
 ### ✅ Fase 2 — Distribuicao & Admin (concluida)
 
-- [x] Runner com loops de scraping e envio (distribuicao temporal por janela de horario)
-- [x] Publicacao ativa no Telegram com titulos gerados por IA
+- [x] Workers isolados por container (scraper, sender, api)
+- [x] Estado compartilhado entre containers via Redis (`redis_state.py`)
+- [x] Docker Compose com 5 servicos (redis, scraper, sender, api, admin)
+- [x] Publicacao ativa no Telegram com titulos gerados por IA (Style Guide v3)
+- [x] Title Generator — 7 formulas via Claude Haiku 4.5
+- [x] Message Validator — checklist de conformidade pre-envio
 - [x] Revisao interativa de titulos pelo admin via Telegram Bot
-- [x] Geracao de imagens lifestyle via OpenRouter
+- [x] Geracao de imagens lifestyle via OpenRouter (2 passos: analise + geracao)
+- [x] Image Storage — upload/recuperacao via Supabase Storage
 - [x] Painel Admin — Dashboard com KPIs e status do sistema
 - [x] Painel Admin — CRUD de ofertas com DataTable, filtros e acoes em lote
 - [x] Painel Admin — Fila de envio com drag-and-drop e acoes (enviar agora, fixar, pular)
+- [x] Painel Admin — Pagina Monitor (status dos workers, proximos eventos)
 - [x] API Admin (FastAPI) com autenticacao JWT via Supabase Auth
-- [x] Dark/light mode com toggle
+- [x] Tema cyberpunk deep purple com dark/light mode
 
-### 🔄 Fase 3 — Analytics & Configuracoes (em andamento)
+### 🔄 Fase 3 — Analytics & Finalizacao (em andamento)
 
 - [ ] Analytics com graficos (Recharts) — serie temporal, funil, distribuicao por categoria
 - [ ] Pagina de configuracoes editaveis no painel admin
-- [ ] Pagina de titulos (historico de revisoes)
 - [ ] Publicacao ativa no WhatsApp via Evolution API
-- [ ] Deploy completo em VPS Hostinger + Docker Compose
+- [ ] Deploy completo em VPS Hostinger
 
 ### 📋 Fase 4 — Enriquecimento & Escala
 
