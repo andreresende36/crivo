@@ -1,0 +1,170 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+  --font-heading: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+}
+
+/* ================================================================
+   Crivo Design System
+   ================================================================ */
+
+:root {
+  /* Crivo Obsidian Palette */
+  --color-primary-base: #09090B;
+  --color-accent-base: #A78BFA;
+  --color-accent-alt: #F59E0B;
+  
+  --color-bg-light: #F4F4F5;
+  --color-bg-dark: #09090B;
+  --color-text-muted: #71717A;
+  
+  --color-success-base: #34D399;
+  --color-warning-base: #FBBF24;
+  --color-danger-base: #EF4444;
+  
+  /* Score badges */
+  --color-score-low: #EF4444;
+  --color-score-mid: #FBBF24;
+  --color-score-high: #34D399;
+  --color-score-elite: #F59E0B;
+
+  /* Shadcn Variables Mapping - Light Mode */
+  --background: #F4F4F5;
+  --foreground: #09090B;
+  --card: #FFFFFF;
+  --card-foreground: #09090B;
+  --popover: #FFFFFF;
+  --popover-foreground: #09090B;
+  --primary: #09090B;
+  --primary-foreground: #F4F4F5;
+  --secondary: #F4F4F5;
+  --secondary-foreground: #09090B;
+  --muted: #F4F4F5;
+  --muted-foreground: #71717A;
+  --accent: #A78BFA;
+  --accent-foreground: #FFFFFF;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #E4E4E7;
+  --input: #E4E4E7;
+  --ring: #A78BFA;
+  
+  --chart-1: #A78BFA;
+  --chart-2: #F59E0B;
+  --chart-3: #34D399;
+  --chart-4: #09090B;
+  --chart-5: #71717A;
+  --radius: 0.5rem;
+  
+  --sidebar: #F4F4F5;
+  --sidebar-foreground: #09090B;
+  --sidebar-primary: #A78BFA;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: rgba(167, 139, 250, 0.1);
+  --sidebar-accent-foreground: #09090B;
+  --sidebar-border: #E4E4E7;
+  --sidebar-ring: rgba(167, 139, 250, 0.3);
+  
+  --success: #34D399;
+  --warning: #FBBF24;
+}
+
+.dark {
+  /* Corporate Premium Dark — sóbrio e elegante */
+  --background: #0d0f1a;
+  --foreground: #dde1ec;
+  --card: #1c1a2e;
+  --card-foreground: #dde1ec;
+  --popover: #1c1a2e;
+  --popover-foreground: #dde1ec;
+  --primary: #4a7a9a;
+  --primary-foreground: #ffffff;
+  --secondary: #1e1c30;
+  --secondary-foreground: #dde1ec;
+  --muted: #1e1c30;
+  --muted-foreground: #9ea5c0;
+  --accent: #3a3060;
+  --accent-foreground: #dde1ec;
+  --destructive: #b03030;
+  --destructive-foreground: #ffffff;
+  --border: #242238;
+  --input: #242238;
+  --ring: rgba(74, 122, 154, 0.25);
+
+  --chart-1: #4a7a9a;
+  --chart-2: #6a5a8a;
+  --chart-3: #3a7a58;
+  --chart-4: #8a7040;
+  --chart-5: #7a7f96;
+
+  --sidebar: #12141f;
+  --sidebar-foreground: #dde1ec;
+  --sidebar-primary: #4a7a9a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1e1c30;
+  --sidebar-accent-foreground: #dde1ec;
+  --sidebar-border: #1c1e2c;
+  --sidebar-ring: rgba(74, 122, 154, 0.2);
+
+  --success: #22c55e;
+  --warning: #9a7030;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

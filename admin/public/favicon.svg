@@ -1,0 +1,12 @@
+<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- C segmento 1: topo, opacidade total -->
+  <path d="M34 12A16 16 0 0 0 10 20" stroke="#A78BFA" stroke-width="5" stroke-linecap="round" fill="none" opacity="1"/>
+  <!-- C segmento 2: meio-esquerda -->
+  <path d="M10 20A16 16 0 0 0 10 28" stroke="#A78BFA" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.75"/>
+  <!-- C segmento 3: base-esquerda -->
+  <path d="M10 28A16 16 0 0 0 24 40" stroke="#A78BFA" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <!-- C segmento 4: base, próximo à abertura -->
+  <path d="M24 40A16 16 0 0 0 34 36" stroke="#A78BFA" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.25"/>
+  <!-- Ponto dourado: o que passou pelo crivo -->
+  <circle cx="36" cy="24" r="3" fill="#F59E0B"/>
+</svg>
