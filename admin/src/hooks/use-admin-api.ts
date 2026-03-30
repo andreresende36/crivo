@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { adminFetch } from "@/lib/api";
 import { useSupabase } from "./use-supabase";
 import type { AISuggestions, OffersListingResponse } from "@/lib/types";
@@ -19,7 +19,7 @@ export function useAdminApi() {
     [supabase]
   );
 
-  return {
+  return useMemo(() => ({
     // Offers — server-side listing
     getOffers: (params: Record<string, string | number | undefined>) => {
       const qs = new URLSearchParams();
@@ -128,5 +128,6 @@ export function useAdminApi() {
 
     getFunnel: (hours = 24) =>
       fetchWithAuth(`/api/admin/analytics/funnel?hours=${hours}`),
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [fetchWithAuth]);
 }

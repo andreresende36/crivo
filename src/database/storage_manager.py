@@ -81,7 +81,15 @@ class StorageManager:
 
     async def _connect(self) -> None:
         """Inicializa SQLite sempre; tenta Supabase se não for forçado SQLite."""
-        await self._sqlite.initialize()
+        try:
+            await self._sqlite.initialize()
+        except Exception as exc:
+            # SQLite pode estar travado por outro container/processo.
+            # Registra aviso e continua: se Supabase estiver disponível,
+            # o sistema opera normalmente sem SQLite.
+            logger.warning("sqlite_init_failed", error=str(exc))
+            if self._force_sqlite:
+                raise
 
         if self._force_sqlite:
             logger.info("storage_backend", backend="sqlite", reason="forced")
