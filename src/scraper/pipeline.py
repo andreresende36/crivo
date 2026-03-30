@@ -7,6 +7,7 @@ O envio ao Telegram é feito pelo sender_loop em runner.py.
 """
 
 import time
+from dataclasses import fields as dc_fields
 from typing import Any
 
 import structlog
@@ -213,6 +214,10 @@ async def _save_products_fallback(
                 rule_score=int(s.score),
                 final_score=int(s.score),
                 status="approved",
+                score_breakdown={
+                    f.name: getattr(s.breakdown, f.name).final_score
+                    for f in dc_fields(s.breakdown)
+                } if hasattr(s, 'breakdown') else None,
             )
             stats["saved"] += 1
         except Exception as exc2:
@@ -252,6 +257,10 @@ async def _save_approved(
                     "rule_score": int(s.score),
                     "final_score": int(s.score),
                     "status": "approved",
+                    "score_breakdown": {
+                        f.name: getattr(s.breakdown, f.name).final_score
+                        for f in dc_fields(s.breakdown)
+                    } if hasattr(s, 'breakdown') else None,
                 }
                 for s in scored_products
                 if s.product.ml_id in ids

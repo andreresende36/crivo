@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { adminFetch } from "@/lib/api";
 import { useSupabase } from "./use-supabase";
+import type { AISuggestions, OffersListingResponse } from "@/lib/types";
 
 export function useAdminApi() {
   const supabase = useSupabase();
@@ -19,7 +20,17 @@ export function useAdminApi() {
   );
 
   return {
-    // Offers
+    // Offers — server-side listing
+    getOffers: (params: Record<string, string | number | undefined>) => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+      }
+      return fetchWithAuth<OffersListingResponse>(
+        `/api/admin/offers?${qs.toString()}`
+      );
+    },
+
     updateOfferStatus: (id: string, status: string) =>
       fetchWithAuth(`/api/admin/offers/${id}/status`, {
         method: "PATCH",
@@ -39,6 +50,43 @@ export function useAdminApi() {
       fetchWithAuth(`/api/admin/offers/${id}/notes`, {
         method: "PATCH",
         body: JSON.stringify({ admin_notes }),
+      }),
+
+    // Offer content curation
+    generateSuggestions: (id: string) =>
+      fetchWithAuth<AISuggestions>(`/api/admin/offers/${id}/suggestions`, {
+        method: "POST",
+      }),
+
+    updateContent: (
+      id: string,
+      content: {
+        custom_title?: string;
+        offer_body?: string;
+        extra_notes?: string;
+      }
+    ) =>
+      fetchWithAuth(`/api/admin/offers/${id}/content`, {
+        method: "PATCH",
+        body: JSON.stringify(content),
+      }),
+
+    approveToQueue: (
+      id: string,
+      content: {
+        custom_title?: string;
+        offer_body?: string;
+        extra_notes?: string;
+      }
+    ) =>
+      fetchWithAuth(`/api/admin/offers/${id}/approve-to-queue`, {
+        method: "POST",
+        body: JSON.stringify(content),
+      }),
+
+    removeFromQueue: (id: string) =>
+      fetchWithAuth(`/api/admin/offers/${id}/remove-from-queue`, {
+        method: "POST",
       }),
 
     // Queue

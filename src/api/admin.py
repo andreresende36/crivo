@@ -81,6 +81,18 @@ class SettingsUpdate(BaseModel):
     settings: dict[str, Any]
 
 
+class OfferContentUpdate(BaseModel):
+    custom_title: str | None = None
+    offer_body: str | None = None
+    extra_notes: str | None = None
+
+
+class ApproveToQueueRequest(BaseModel):
+    custom_title: str | None = None
+    offer_body: str | None = None
+    extra_notes: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Ofertas CRUD
 # ---------------------------------------------------------------------------
@@ -163,6 +175,163 @@ async def bulk_action(
                 results.append({"id": offer_id, "ok": False, "error": str(exc)})
 
     return {"results": results}
+
+
+# ---------------------------------------------------------------------------
+# Listagem server-side
+# ---------------------------------------------------------------------------
+
+
+@router.get("/offers")
+async def list_offers(
+    _user: CurrentUser,
+    status: str | None = None,
+    category_id: str | None = None,
+    search: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    min_discount: float | None = None,
+    min_score: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort_by: str = "score",
+    sort_dir: str = "desc",
+    page: int = 1,
+    page_size: int = 25,
+):
+    """Listagem paginada de ofertas com filtros server-side."""
+    async with StorageManager() as storage:
+        params = {
+            "p_status": status,
+            "p_category_id": category_id,
+            "p_search": search,
+            "p_min_price": min_price,
+            "p_max_price": max_price,
+            "p_min_discount": min_discount,
+            "p_min_score": min_score,
+            "p_date_from": date_from,
+            "p_date_to": date_to,
+            "p_sort_by": sort_by,
+            "p_sort_dir": sort_dir,
+            "p_page": page,
+            "p_page_size": page_size,
+        }
+        data = _call_rpc(storage, "fn_admin_offers_listing", params)
+    if data is None:
+        return {"offers": [], "total": 0, "counts": {}}
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Sugestoes IA (titulo + corpo)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/offers/{offer_id}/suggestions")
+async def generate_offer_suggestions(
+    offer_id: str,
+    _user: CurrentUser,
+):
+    """Gera 3 sugestoes de titulo + 3 sugestoes de corpo via IA."""
+    from src.distributor.suggestion_generator import generate_suggestions
+
+    async with StorageManager() as storage:
+        # Buscar dados do produto para a oferta
+        if storage._using_supabase:
+            resp = (
+                storage._supabase._client.table("scored_offers")
+                .select("product_id, products!inner(title, current_price, original_price, discount_percent, free_shipping, rating_stars, rating_count, categories(name))")
+                .eq("id", offer_id)
+                .single()
+                .execute()
+            )
+            if not resp.data:
+                raise HTTPException(status_code=404, detail=_NOT_FOUND)
+            row = resp.data
+            product = row["products"]
+            category = product.get("categories", {})
+            category_name = category.get("name", "") if category else ""
+        else:
+            raise HTTPException(status_code=501, detail="Sugestoes requerem Supabase")
+
+    suggestions = await generate_suggestions(
+        product_title=product["title"],
+        category=category_name,
+        price=float(product["current_price"]),
+        original_price=float(product["original_price"]) if product.get("original_price") else None,
+        discount_pct=float(product.get("discount_percent", 0)),
+        free_shipping=bool(product.get("free_shipping", False)),
+        rating=float(product["rating_stars"]) if product.get("rating_stars") else None,
+        review_count=int(product["rating_count"]) if product.get("rating_count") else None,
+    )
+    return suggestions
+
+
+# ---------------------------------------------------------------------------
+# Conteudo curado (titulo, corpo, notas)
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/offers/{offer_id}/content", responses={404: {"description": _NOT_FOUND}})
+async def update_offer_content(
+    offer_id: str,
+    body: OfferContentUpdate,
+    _user: CurrentUser,
+):
+    """Salva titulo, corpo e notas curados pelo admin."""
+    fields = {}
+    if body.custom_title is not None:
+        fields["custom_title"] = body.custom_title
+    if body.offer_body is not None:
+        fields["offer_body"] = body.offer_body
+    if body.extra_notes is not None:
+        fields["extra_notes"] = body.extra_notes
+
+    if not fields:
+        return {"ok": True}
+
+    async with StorageManager() as storage:
+        ok = await _update_scored_offer(storage, offer_id, **fields)
+        if not ok:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return {"ok": True}
+
+
+@router.post("/offers/{offer_id}/approve-to-queue", responses={404: {"description": _NOT_FOUND}})
+async def approve_to_queue(
+    offer_id: str,
+    body: ApproveToQueueRequest,
+    _user: CurrentUser,
+):
+    """Salva conteudo curado e move a oferta para a fila de envio (status=approved)."""
+    fields: dict[str, Any] = {"status": "approved"}
+    if body.custom_title is not None:
+        fields["custom_title"] = body.custom_title
+    if body.offer_body is not None:
+        fields["offer_body"] = body.offer_body
+    if body.extra_notes is not None:
+        fields["extra_notes"] = body.extra_notes
+
+    async with StorageManager() as storage:
+        ok = await _update_scored_offer(storage, offer_id, **fields)
+        if not ok:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return {"ok": True, "status": "approved"}
+
+
+@router.post("/offers/{offer_id}/remove-from-queue", responses={404: {"description": _NOT_FOUND}})
+async def remove_from_queue(
+    offer_id: str,
+    _user: CurrentUser,
+):
+    """Remove oferta da fila de envio, voltando para pendente."""
+    async with StorageManager() as storage:
+        ok = await _update_scored_offer(
+            storage, offer_id, status="pending", queue_priority=0
+        )
+        if not ok:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return {"ok": True, "status": "pending"}
 
 
 # ---------------------------------------------------------------------------

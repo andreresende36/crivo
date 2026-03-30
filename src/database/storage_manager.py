@@ -595,6 +595,7 @@ class StorageManager:
         rule_score: int,
         final_score: int,
         status: str,
+        score_breakdown: dict | None = None,
     ) -> str:
         """
         Salva o resultado da análise em ambos os bancos.
@@ -615,6 +616,7 @@ class StorageManager:
                     rule_score,
                     final_score,
                     status,
+                    score_breakdown=score_breakdown,
                 )
             except SupabaseError as exc:
                 logger.warning("supabase_scored_offer_failed", error=str(exc))
@@ -627,6 +629,7 @@ class StorageManager:
                 final_score,
                 status,
                 offer_id=canonical_id,
+                score_breakdown=score_breakdown,
             )
         except SQLiteError as exc:
             if _FOREIGN_KEY in str(exc):
