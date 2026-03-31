@@ -67,6 +67,11 @@ export interface QueueItem {
   queue_priority: number;
   score_override: number | null;
   admin_notes: string | null;
+  custom_title: string | null;
+  offer_body: string | null;
+  extra_notes: string | null;
+  score_breakdown: ScoreBreakdown | null;
+  approved_at: string | null;
 }
 
 /** Linha da view vw_top_deals */
@@ -128,7 +133,25 @@ export interface ConversionFunnel {
   sent: number;
 }
 
-/** Offer row for the offers table (joined product + scored_offer) */
+/** Score breakdown per criterion (stored as JSONB in scored_offers) */
+export interface ScoreBreakdown {
+  discount: number;
+  badge: number;
+  rating: number;
+  reviews: number;
+  free_shipping: number;
+  installments: number;
+  title_quality: number;
+  [key: string]: number;
+}
+
+/** AI suggestion response from /offers/{id}/suggestions */
+export interface AISuggestions {
+  titles: string[];
+  bodies: string[];
+}
+
+/** Offer row returned by fn_admin_offers_listing RPC */
 export interface OfferRow {
   // From products
   product_id: string;
@@ -136,10 +159,13 @@ export interface OfferRow {
   title: string;
   current_price: number;
   original_price: number | null;
+  pix_price: number | null;
   discount_percent: number;
   thumbnail_url: string | null;
   product_url: string;
   free_shipping: boolean;
+  rating_stars: number | null;
+  rating_count: number | null;
   // From scored_offers
   scored_offer_id: string;
   final_score: number;
@@ -147,8 +173,28 @@ export interface OfferRow {
   scored_at: string;
   queue_priority: number;
   admin_notes: string | null;
+  score_breakdown: ScoreBreakdown | null;
+  approved_at: string | null;
+  custom_title: string | null;
+  offer_body: string | null;
+  extra_notes: string | null;
   // From joins
   brand: string | null;
   category: string | null;
   badge: string | null;
+  // Derived
+  lowest_price: number | null;
+  sent_at: string | null;
+  display_status: "pending" | "in_queue" | "sent";
+}
+
+/** Response from GET /api/admin/offers (fn_admin_offers_listing) */
+export interface OffersListingResponse {
+  offers: OfferRow[];
+  total: number;
+  counts: {
+    pending: number;
+    in_queue: number;
+    sent: number;
+  };
 }

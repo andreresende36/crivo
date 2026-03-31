@@ -450,6 +450,7 @@ class SupabaseClient:
         rule_score: int,
         final_score: int,
         status: str,
+        score_breakdown: dict | None = None,
     ) -> Optional[str]:
         """
         Salva o resultado da análise de uma oferta.
@@ -459,17 +460,20 @@ class SupabaseClient:
             rule_score: Pontuação calculada pelo Score Engine (0-100)
             final_score: Pontuação final
             status: "approved" | "rejected" | "pending"
+            score_breakdown: Composição do score por critério (JSONB)
 
         Returns:
             UUID do scored_offer criado, ou None em caso de erro.
         """
-        data = {
+        data: dict = {
             "product_id": product_id,
             "rule_score": rule_score,
             "final_score": final_score,
             "status": status,
             "scored_at": datetime.now(tz=timezone.utc).isoformat(),
         }
+        if score_breakdown is not None:
+            data["score_breakdown"] = score_breakdown
         try:
             result = await self._db.table("scored_offers").insert(data).execute()
             if not result.data:
@@ -501,13 +505,16 @@ class SupabaseClient:
         # Deduplica por product_id — último registro prevalece
         deduped: dict[str, dict] = {}
         for e in entries:
-            deduped[e["product_id"]] = {
+            row: dict = {
                 "product_id": e["product_id"],
                 "rule_score": e["rule_score"],
                 "final_score": e["final_score"],
                 "status": e["status"],
                 "scored_at": now,
             }
+            if e.get("score_breakdown") is not None:
+                row["score_breakdown"] = e["score_breakdown"]
+            deduped[e["product_id"]] = row
         rows = list(deduped.values())
         try:
             result = (

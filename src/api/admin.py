@@ -13,9 +13,26 @@ import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from supabase import AsyncClient, acreate_client
 
 from src.config import settings
 from src.database.storage_manager import StorageManager
+
+# ---------------------------------------------------------------------------
+# Cliente Supabase leve para RPCs de leitura (sem overhead do StorageManager)
+# ---------------------------------------------------------------------------
+_supabase_rpc_client: AsyncClient | None = None
+
+
+async def _get_rpc_client() -> AsyncClient:
+    """Retorna (ou cria) um cliente Supabase async singleton para RPCs de leitura."""
+    global _supabase_rpc_client
+    if _supabase_rpc_client is None:
+        _supabase_rpc_client = await acreate_client(
+            settings.supabase.url,
+            settings.supabase.service_role_key or settings.supabase.anon_key,
+        )
+    return _supabase_rpc_client
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -79,6 +96,18 @@ class QueueReorder(BaseModel):
 
 class SettingsUpdate(BaseModel):
     settings: dict[str, Any]
+
+
+class OfferContentUpdate(BaseModel):
+    custom_title: str | None = None
+    offer_body: str | None = None
+    extra_notes: str | None = None
+
+
+class ApproveToQueueRequest(BaseModel):
+    custom_title: str | None = None
+    offer_body: str | None = None
+    extra_notes: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +192,164 @@ async def bulk_action(
                 results.append({"id": offer_id, "ok": False, "error": str(exc)})
 
     return {"results": results}
+
+
+# ---------------------------------------------------------------------------
+# Listagem server-side
+# ---------------------------------------------------------------------------
+
+
+@router.get("/offers")
+async def list_offers(
+    _user: CurrentUser,
+    status: str | None = None,
+    category_id: str | None = None,
+    search: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    min_discount: float | None = None,
+    min_score: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort_by: str = "score",
+    sort_dir: str = "desc",
+    page: int = 1,
+    page_size: int = 25,
+):
+    """Listagem paginada de ofertas com filtros server-side (RPC direto, sem StorageManager)."""
+    params = {
+        "p_status": status,
+        "p_category_id": category_id,
+        "p_search": search,
+        "p_min_price": min_price,
+        "p_max_price": max_price,
+        "p_min_discount": min_discount,
+        "p_min_score": min_score,
+        "p_date_from": date_from,
+        "p_date_to": date_to,
+        "p_sort_by": sort_by,
+        "p_sort_dir": sort_dir,
+        "p_page": page,
+        "p_page_size": page_size,
+    }
+    try:
+        client = await _get_rpc_client()
+        resp = await client.rpc("fn_admin_offers_listing", params).execute()
+        data = resp.data
+    except Exception as exc:
+        logger.warning("list_offers_rpc_failed", error=str(exc))
+        return {"offers": [], "total": 0, "counts": {}}
+    if data is None:
+        return {"offers": [], "total": 0, "counts": {}}
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Sugestoes IA (titulo + corpo)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/offers/{offer_id}/suggestions")
+async def generate_offer_suggestions(
+    offer_id: str,
+    _user: CurrentUser,
+):
+    """Gera 3 sugestoes de titulo + 3 sugestoes de corpo via IA."""
+    from src.distributor.suggestion_generator import generate_suggestions
+
+    client = await _get_rpc_client()
+    resp = await (
+        client.table("scored_offers")
+        .select("product_id, products!inner(title, current_price, original_price, discount_percent, free_shipping, rating_stars, rating_count, categories(name))")
+        .eq("id", offer_id)
+        .maybe_single()
+        .execute()
+    )
+    if not resp or not resp.data:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    row = resp.data
+    product = row["products"]
+    category = product.get("categories", {})
+    category_name = category.get("name", "") if category else ""
+
+    suggestions = await generate_suggestions(
+        product_title=product["title"],
+        category=category_name,
+        price=float(product["current_price"]),
+        original_price=float(product["original_price"]) if product.get("original_price") else None,
+        discount_pct=float(product.get("discount_percent", 0)),
+        free_shipping=bool(product.get("free_shipping", False)),
+        rating=float(product["rating_stars"]) if product.get("rating_stars") else None,
+        review_count=int(product["rating_count"]) if product.get("rating_count") else None,
+    )
+    return suggestions
+
+
+# ---------------------------------------------------------------------------
+# Conteudo curado (titulo, corpo, notas)
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/offers/{offer_id}/content", responses={404: {"description": _NOT_FOUND}})
+async def update_offer_content(
+    offer_id: str,
+    body: OfferContentUpdate,
+    _user: CurrentUser,
+):
+    """Salva titulo, corpo e notas curados pelo admin."""
+    fields = {}
+    if body.custom_title is not None:
+        fields["custom_title"] = body.custom_title
+    if body.offer_body is not None:
+        fields["offer_body"] = body.offer_body
+    if body.extra_notes is not None:
+        fields["extra_notes"] = body.extra_notes
+
+    if not fields:
+        return {"ok": True}
+
+    async with StorageManager() as storage:
+        ok = await _update_scored_offer(storage, offer_id, **fields)
+        if not ok:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return {"ok": True}
+
+
+@router.post("/offers/{offer_id}/approve-to-queue", responses={404: {"description": _NOT_FOUND}})
+async def approve_to_queue(
+    offer_id: str,
+    body: ApproveToQueueRequest,
+    _user: CurrentUser,
+):
+    """Salva conteudo curado e move a oferta para a fila de envio (status=approved)."""
+    fields: dict[str, Any] = {"status": "approved"}
+    if body.custom_title is not None:
+        fields["custom_title"] = body.custom_title
+    if body.offer_body is not None:
+        fields["offer_body"] = body.offer_body
+    if body.extra_notes is not None:
+        fields["extra_notes"] = body.extra_notes
+
+    async with StorageManager() as storage:
+        ok = await _update_scored_offer(storage, offer_id, **fields)
+        if not ok:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return {"ok": True, "status": "approved"}
+
+
+@router.post("/offers/{offer_id}/remove-from-queue", responses={404: {"description": _NOT_FOUND}})
+async def remove_from_queue(
+    offer_id: str,
+    _user: CurrentUser,
+):
+    """Remove oferta da fila de envio, voltando para pendente."""
+    async with StorageManager() as storage:
+        ok = await _update_scored_offer(
+            storage, offer_id, status="pending", queue_priority=0
+        )
+        if not ok:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return {"ok": True, "status": "pending"}
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +469,7 @@ async def get_settings(
 ):
     """Retorna configurações editáveis do sistema."""
     async with StorageManager() as storage:
-        overrides = _get_admin_settings(storage)
+        overrides = await _get_admin_settings(storage)
 
     return {
         "current": {
@@ -307,7 +494,7 @@ async def update_settings(
     """Atualiza configurações do admin (persistidas em admin_settings)."""
     async with StorageManager() as storage:
         for key, value in body.settings.items():
-            _set_admin_setting(storage, key, value)
+            await _set_admin_setting(storage, key, value)
     return {"ok": True}
 
 
@@ -323,7 +510,7 @@ async def analytics_daily(
 ):
     """Métricas diárias para gráficos trend."""
     async with StorageManager() as storage:
-        data = _call_rpc(storage, "fn_daily_metrics", {"days_back": days})
+        data = await _call_rpc(storage, "fn_daily_metrics", {"days_back": days})
     return {"data": data}
 
 
@@ -333,7 +520,7 @@ async def analytics_hourly(
 ):
     """Envios por hora de hoje."""
     async with StorageManager() as storage:
-        data = _call_rpc(storage, "fn_hourly_sends", {})
+        data = await _call_rpc(storage, "fn_hourly_sends", {})
     return {"data": data}
 
 
@@ -344,7 +531,7 @@ async def analytics_funnel(
 ):
     """Funil de conversão."""
     async with StorageManager() as storage:
-        data = _call_rpc(storage, "fn_conversion_funnel", {"hours_back": hours})
+        data = await _call_rpc(storage, "fn_conversion_funnel", {"hours_back": hours})
     return {"data": data}
 
 
@@ -376,7 +563,7 @@ async def _update_scored_offer(
     """Atualiza campos arbitrários de um scored_offer."""
     if storage._using_supabase:
         try:
-            resp = (
+            resp = await (
                 storage._supabase._client.table("scored_offers")
                 .update(fields)
                 .eq("id", scored_offer_id)
@@ -403,22 +590,22 @@ async def _update_scored_offer(
             return False
 
 
-def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
+async def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
     """Lê todas as configurações do admin_settings."""
     if storage._using_supabase:
         try:
-            resp = storage._supabase._client.table("admin_settings").select("*").execute()
+            resp = await storage._supabase._client.table("admin_settings").select("*").execute()
             return {row["key"]: row["value"] for row in (resp.data or [])}
         except Exception:
             return {}
     return {}
 
 
-def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
+async def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
     """Upsert de uma configuração no admin_settings."""
     if storage._using_supabase:
         try:
-            storage._supabase._client.table("admin_settings").upsert(
+            await storage._supabase._client.table("admin_settings").upsert(
                 {"key": key, "value": value},
                 on_conflict="key",
             ).execute()
@@ -429,15 +616,15 @@ def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
     return False
 
 
-def _call_rpc(
+async def _call_rpc(
     storage: StorageManager,
     fn_name: str,
     params: dict[str, Any],
 ) -> list[dict] | dict | None:
-    """Chama uma RPC function do Supabase."""
+    """Chama uma RPC function do Supabase (async)."""
     if storage._using_supabase:
         try:
-            resp = storage._supabase._client.rpc(fn_name, params).execute()
+            resp = await storage._supabase._client.rpc(fn_name, params).execute()
             return resp.data
         except Exception as exc:
             logger.warning("rpc_call_failed", fn=fn_name, error=str(exc))

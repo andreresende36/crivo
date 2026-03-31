@@ -22,7 +22,6 @@ from src.database.storage_manager import StorageManager
 from src.distributor.sender import send_next_offer
 from src.monitoring.alert_bot import AlertBot
 from src.monitoring.state import set_next_send_time, set_is_sending_hours
-from src.distributor.title_review_bot import TitleReviewBot
 
 setup_logging()
 logger = structlog.get_logger(__name__)
@@ -99,7 +98,6 @@ async def sender_loop(
     storage: StorageManager,
     shutdown: asyncio.Event,
     alert_bot: AlertBot,
-    title_review_bot: TitleReviewBot | None = None,
 ) -> None:
     while not shutdown.is_set():
         is_sending = is_sending_hours()
@@ -118,7 +116,7 @@ async def sender_loop(
             continue
 
         try:
-            sent = await send_next_offer(storage, title_review_bot=title_review_bot)
+            sent = await send_next_offer(storage)
             if not sent:
                 logger.debug("sender_queue_empty_waiting")
         except Exception as exc:
@@ -157,28 +155,12 @@ async def main() -> None:
 
     alert_bot = AlertBot()
 
-    title_review_bot: TitleReviewBot | None = None
-    if settings.title_review.enabled:
-        title_review_bot = TitleReviewBot()
-        try:
-            await title_review_bot.start()
-            logger.info("title_review_enabled")
-        except Exception as exc:
-            logger.warning("title_review_bot_start_failed", error=str(exc))
-            title_review_bot = None
-
     async with StorageManager() as storage:
         task = asyncio.create_task(
-            sender_loop(storage, shutdown, alert_bot, title_review_bot)
+            sender_loop(storage, shutdown, alert_bot)
         )
         await shutdown.wait()
         logger.info("sender_worker_shutting_down")
-
-        if title_review_bot:
-            try:
-                await title_review_bot.stop()
-            except Exception as exc:
-                logger.warning("title_review_bot_stop_error", error=str(exc))
 
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)

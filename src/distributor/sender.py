@@ -1,16 +1,14 @@
 """
-Garimpou — Sender (Style Guide v3)
-Envia a próxima oferta da fila de prioridade (maior score primeiro).
+Crivo — Sender (Style Guide v3)
+Envia a próxima oferta da fila (FIFO por approved_at, com override por queue_priority).
 
 Fluxo:
   1. Consulta próxima oferta não enviada (view vw_approved_unsent)
-  2. Gera título catchy via IA (Haiku)
-  3. Seleciona melhor imagem real do produto (3 camadas)
-  4. Upload da imagem para Supabase Storage
-  5. Obtém/cria link de afiliado
-  6. Formata mensagem com template Style Guide v3
-  7. Publica via Telegram
-  8. Marca como enviada
+  2. Se conteúdo curado pelo admin (custom_title/offer_body): usa diretamente
+  3. Senão: gera título catchy via IA + formata automaticamente
+  4. Obtém/cria link de afiliado
+  5. Publica via Telegram
+  6. Marca como enviada
 """
 
 from __future__ import annotations
@@ -27,7 +25,6 @@ from src.distributor.telegram_bot import TelegramBot
 
 if TYPE_CHECKING:
     from src.database.storage_manager import StorageManager
-    from src.distributor.title_review_bot import TitleReviewBot
 
 logger = structlog.get_logger(__name__)
 
@@ -146,100 +143,6 @@ async def _get_affiliate_url(
     return short_url
 
 
-async def _load_title_examples(storage: StorageManager) -> list:
-    """Carrega exemplos few-shot de títulos aprovados (se review habilitado)."""
-    from src.database.title_examples import TitleExample
-
-    if not settings.title_review.enabled:
-        return []
-    try:
-        raw_examples = await storage.get_recent_title_examples(
-            limit=settings.title_review.examples_in_prompt
-        )
-        if raw_examples:
-            examples = [TitleExample.from_dict(e) for e in raw_examples]
-            logger.debug("title_examples_loaded", count=len(examples))
-            return examples
-    except Exception as exc:
-        logger.warning("title_examples_load_failed", error=str(exc))
-    return []
-
-
-async def _run_title_review(
-    title_review_bot: TitleReviewBot,
-    catchy_title: str,
-    storage: StorageManager,
-    scored_offer_id: str,
-    offer: UnsentOfferRow,
-    title_examples: list,
-) -> tuple[str | None, bool]:
-    """
-    Executa o loop de revisão de título pelo admin via Telegram.
-
-    Returns:
-        (título_final, deve_abortar). Se deve_abortar=True, a oferta foi
-        revertida para pending e o envio deve ser cancelado.
-    """
-    from src.distributor.title_generator import generate_catchy_title
-    from src.database.title_examples import TitleExampleData
-
-    product_title = offer["title"]
-    category = offer.get("category") or ""
-    current_price = float(offer["current_price"])
-    original_price_val = float(offer["original_price"]) if offer.get("original_price") else None
-    discount_pct = float(offer.get("discount_percent") or 0)
-    max_regen = settings.title_review.max_regenerations
-    result = None
-
-    for attempt in range(max_regen + 1):
-        result = await title_review_bot.request_review(
-            product_title=product_title,
-            category=category,
-            price=current_price,
-            discount_pct=discount_pct,
-            generated_title=catchy_title,
-        )
-
-        if result.action in ("approved", "edited"):
-            catchy_title = result.final_title
-            break
-        if result.action == "timeout":
-            logger.warning("title_review_timeout_reverting", ml_id=offer["ml_id"])
-            await storage.revert_to_pending(scored_offer_id)
-            return None, True
-        if result.action == "rejected" and attempt < max_regen:
-            logger.info("title_rejected_regenerating", attempt=attempt + 1, max=max_regen)
-            try:
-                catchy_title = await generate_catchy_title(
-                    product_title=product_title,
-                    category=category,
-                    price=current_price,
-                    original_price=original_price_val,
-                    examples=title_examples,
-                )
-                continue  # regenerated successfully; request review again
-            except Exception:
-                pass  # fall through to break
-        else:
-            logger.warning("title_max_rejections_reached", ml_id=offer["ml_id"])
-        break
-
-    if result and result.action != "rejected":
-        try:
-            example_data = TitleExampleData(
-                generated_title=result.generated_title,
-                final_title=catchy_title or result.final_title,
-                action=result.action,
-                scored_offer_id=scored_offer_id,
-            )
-            await storage.save_title_example(example_data.to_dict())
-            logger.info("title_example_saved", action=result.action, title=catchy_title)
-        except Exception as exc:
-            logger.warning("title_example_save_failed", error=str(exc))
-
-    return catchy_title, False
-
-
 async def _publish_telegram(
     bot: TelegramBot,
     msg: Any,
@@ -281,16 +184,16 @@ async def _publish_telegram(
 async def send_next_offer(
     storage: StorageManager,
     telegram_bot: TelegramBot | None = None,
-    title_review_bot: TitleReviewBot | None = None,
 ) -> bool:
     """
     Envia a próxima oferta da fila.
 
+    Se a oferta tem conteúdo curado pelo admin (custom_title/offer_body),
+    usa diretamente. Caso contrário, gera título e formata automaticamente.
+
     Args:
         storage: StorageManager compartilhado com o pipeline.
         telegram_bot: Instância injetável (criada internamente se None).
-                      Útil para testes e para reutilizar a mesma conexão.
-        title_review_bot: Bot de revisão de títulos (None = sem revisão).
 
     Returns:
         True se uma oferta foi enviada, False se a fila está vazia.
@@ -303,7 +206,6 @@ async def send_next_offer(
 
     product_id = offer["product_id"]
     scored_offer_id = offer["scored_offer_id"]
-    thumbnail_url = offer.get("thumbnail_url") or ""
     ml_id = offer["ml_id"]
     product_title = offer["title"]
     category = offer.get("category") or ""
@@ -316,47 +218,56 @@ async def send_next_offer(
     product = _offer_to_product(offer)
     formatter = MessageFormatter()
 
-    from src.distributor.title_generator import generate_catchy_title
+    # 2. Conteúdo curado pelo admin (prioridade) ou auto-gerado
+    custom_title = offer.get("custom_title")
+    custom_body = offer.get("offer_body")
+    extra_notes = offer.get("extra_notes")
 
-    # 2. Carregar exemplos few-shot + 3. Gerar título catchy via IA
-    title_examples = await _load_title_examples(storage)
-    catchy_title: str | None = None
-    current_price = float(offer["current_price"])
-    original_price_val = float(offer["original_price"]) if offer.get("original_price") else None
+    if custom_body:
+        # Admin curou o corpo da mensagem — usar diretamente
+        # Substituir placeholder {LINK} pelo link de afiliado
+        telegram_text = custom_body.replace("{LINK}", short_url)
+        if extra_notes:
+            telegram_text = telegram_text.rstrip() + "\n\n" + extra_notes
 
-    if settings.openrouter.api_key:
-        try:
-            catchy_title = await generate_catchy_title(
-                product_title=product_title,
-                category=category,
-                price=current_price,
-                original_price=original_price_val,
-                examples=title_examples,
-            )
-        except Exception as exc:
-            logger.warning("title_generation_failed", ml_id=ml_id, error=str(exc))
-
-    # 4. Review de título pelo admin (se habilitado)
-    if catchy_title and settings.title_review.enabled and title_review_bot:
-        catchy_title, should_abort = await _run_title_review(
-            title_review_bot, catchy_title, storage, scored_offer_id, offer, title_examples
+        from src.distributor.message_formatter import FormattedMessage
+        msg = FormattedMessage(
+            telegram_text=telegram_text,
+            whatsapp_text=telegram_text,  # mesmo conteúdo
+            image_url=offer.get("thumbnail_url") or None,
+            short_link=short_url,
+            product_ml_id=ml_id,
         )
-        if should_abort:
-            return False
+        catchy_title = custom_title
+    else:
+        # Fluxo auto: gerar título via IA se não curado
+        catchy_title = custom_title
+        if not catchy_title and settings.openrouter.api_key:
+            from src.distributor.title_generator import generate_catchy_title
+            try:
+                catchy_title = await generate_catchy_title(
+                    product_title=product_title,
+                    category=category,
+                    price=float(offer["current_price"]),
+                    original_price=float(offer["original_price"]) if offer.get("original_price") else None,
+                )
+            except Exception as exc:
+                logger.warning("title_generation_failed", ml_id=ml_id, error=str(exc))
 
-    # 5. Usar imagem padrão do Mercado Livre (thumbnail_url)
-    # TODO: reativar quando image enhancement for reintegrado
-    enhanced_image_url: str | None = None
+        enhanced_image_url: str | None = None
+        msg = formatter.format(
+            product,
+            short_link=short_url,
+            catchy_title=catchy_title,
+            enhanced_image_url=enhanced_image_url,
+        )
 
-    # 6. Formatar mensagem (Style Guide v3)
-    msg = formatter.format(
-        product,
-        short_link=short_url,
-        catchy_title=catchy_title,
-        enhanced_image_url=enhanced_image_url,
-    )
+        if extra_notes:
+            # Inserir notas antes do rodapé
+            msg.telegram_text = msg.telegram_text.rstrip() + "\n\n" + extra_notes
+            msg.whatsapp_text = msg.whatsapp_text.rstrip() + "\n\n" + extra_notes
 
-    # 7. Validar mensagem (soft — loga mas não bloqueia)
+    # Validar mensagem (soft — loga mas não bloqueia)
     from src.distributor.message_validator import validate_message
     validate_message(
         whatsapp_text=msg.whatsapp_text,
@@ -366,12 +277,12 @@ async def send_next_offer(
         has_image=msg.image_url is not None,
     )
 
-    # 8. Publicar no Telegram
+    # Publicar no Telegram
     if not settings.telegram.bot_token or not settings.telegram.group_ids:
         logger.warning("telegram_not_configured")
         return False
 
     bot = telegram_bot or TelegramBot()
     return await _publish_telegram(
-        bot, msg, storage, scored_offer_id, ml_id, offer, short_url, catchy_title, enhanced_image_url
+        bot, msg, storage, scored_offer_id, ml_id, offer, short_url, catchy_title, None
     )

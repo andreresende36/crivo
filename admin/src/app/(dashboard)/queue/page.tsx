@@ -33,12 +33,14 @@ function SortableQueueItem({
   onSkip,
   onPin,
   onSendNow,
+  onRemove,
 }: {
   item: QueueItem;
   index: number;
   onSkip: (id: string) => void;
   onPin: (id: string) => void;
   onSendNow: (id: string) => void;
+  onRemove: (id: string) => void;
 }) {
   const {
     attributes,
@@ -93,7 +95,7 @@ function SortableQueueItem({
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-[15px] truncate text-foreground leading-snug">{item.title}</p>
+        <p className="font-medium text-[15px] truncate text-foreground leading-snug">{item.custom_title || item.title}</p>
         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           {item.category && (
             <span className="px-2 py-0.5 rounded bg-muted border border-border text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -113,6 +115,11 @@ function SortableQueueItem({
           {item.queue_priority > 0 && (
             <span className="bg-accent/10 border border-accent/20 text-accent text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-bold">
               📌 Pinned ({item.queue_priority})
+            </span>
+          )}
+          {item.approved_at && (
+            <span className="text-[10px] text-muted-foreground font-mono tracking-wider">
+              aprovada {new Date(item.approved_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
             </span>
           )}
         </div>
@@ -160,6 +167,13 @@ function SortableQueueItem({
           title="Pular"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="transition-transform group-hover/btn:-translate-y-0.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg>
+        </button>
+        <button
+          onClick={() => onRemove(item.scored_offer_id)}
+          className="p-2.5 rounded-xl border border-border bg-secondary hover:bg-destructive/10 hover:border-destructive/30 transition text-muted-foreground hover:text-destructive group/btn"
+          title="Remover da fila"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="transition-transform group-hover/btn:-translate-y-0.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
     </div>
@@ -258,6 +272,12 @@ export default function QueuePage() {
     toast.success("Oferta pulada.");
   }
 
+  async function handleRemove(id: string) {
+    await api.removeFromQueue(id);
+    fetchQueue();
+    toast.success("Oferta removida da fila.");
+  }
+
   if (loading) {
     return <DashboardLoading />;
   }
@@ -343,6 +363,7 @@ export default function QueuePage() {
                   onSkip={handleSkip}
                   onPin={handlePin}
                   onSendNow={handleSendNow}
+                  onRemove={handleRemove}
                 />
               ))}
             </div>

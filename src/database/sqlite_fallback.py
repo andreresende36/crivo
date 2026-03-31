@@ -171,17 +171,22 @@ class SQLiteFallback:
         );
 
         CREATE TABLE IF NOT EXISTS scored_offers (
-            id             TEXT PRIMARY KEY,
-            product_id     TEXT NOT NULL
-                               REFERENCES products(id) ON DELETE CASCADE,
-            rule_score     INTEGER NOT NULL,
-            final_score    INTEGER NOT NULL,
-            status         TEXT NOT NULL DEFAULT 'pending',
-            scored_at      TEXT DEFAULT (datetime('now')),
-            queue_priority INTEGER DEFAULT 0,
-            score_override INTEGER,
-            admin_notes    TEXT,
-            synced         INTEGER DEFAULT 0
+            id              TEXT PRIMARY KEY,
+            product_id      TEXT NOT NULL
+                                REFERENCES products(id) ON DELETE CASCADE,
+            rule_score      INTEGER NOT NULL,
+            final_score     INTEGER NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            scored_at       TEXT DEFAULT (datetime('now')),
+            queue_priority  INTEGER DEFAULT 0,
+            score_override  INTEGER,
+            admin_notes     TEXT,
+            score_breakdown TEXT,
+            approved_at     TEXT,
+            custom_title    TEXT,
+            offer_body      TEXT,
+            extra_notes     TEXT,
+            synced          INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS sent_offers (
@@ -1406,6 +1411,7 @@ class SQLiteFallback:
         final_score: int,
         status: str,
         offer_id: Optional[str] = None,
+        score_breakdown: dict | None = None,
     ) -> Optional[str]:
         """
         Salva o resultado da análise de uma oferta.
@@ -1413,18 +1419,22 @@ class SQLiteFallback:
         Args:
             offer_id: UUID pré-definido (ex: vindo do Supabase) para manter
                       FKs consistentes entre os bancos.
+            score_breakdown: Composição do score por critério (serializado como JSON text).
 
         Returns:
             UUID do scored_offer criado, ou None em caso de erro.
         """
+        import json as _json
+
         row_id = offer_id or str(uuid.uuid4())
         now = datetime.now(tz=timezone.utc).isoformat()
+        breakdown_json = _json.dumps(score_breakdown) if score_breakdown else None
         try:
             await self._db.execute(
                 """
                 INSERT INTO scored_offers (
-                    id, product_id, rule_score, final_score, status, scored_at
-                ) VALUES (?,?,?,?,?,?)
+                    id, product_id, rule_score, final_score, status, scored_at, score_breakdown
+                ) VALUES (?,?,?,?,?,?,?)
                 """,
                 (
                     row_id,
@@ -1433,6 +1443,7 @@ class SQLiteFallback:
                     final_score,
                     status,
                     now,
+                    breakdown_json,
                 ),
             )
             await self._db.commit()

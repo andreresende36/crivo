@@ -265,31 +265,6 @@ class SenderConfig:
 
 
 # ---------------------------------------------------------------------------
-# Title Review (feedback loop para treinamento de títulos)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class TitleReviewConfig:
-    # Habilita revisão de títulos pelo admin via Telegram
-    enabled: bool = field(
-        default_factory=lambda: os.getenv("TITLE_REVIEW_ENABLED", "false").lower() == "true"
-    )
-    # Timeout em segundos para o admin responder (auto-aprova se expirar)
-    timeout_seconds: int = field(
-        default_factory=lambda: int(os.getenv("TITLE_REVIEW_TIMEOUT", "300"))
-    )
-    # Máximo de regenerações ao rejeitar título
-    max_regenerations: int = field(
-        default_factory=lambda: int(os.getenv("TITLE_REVIEW_MAX_REGEN", "3"))
-    )
-    # Quantidade de exemplos aprovados injetados no prompt (few-shot)
-    examples_in_prompt: int = field(
-        default_factory=lambda: int(os.getenv("TITLE_REVIEW_EXAMPLES_COUNT", "10"))
-    )
-
-
-# ---------------------------------------------------------------------------
 # Fontes de Scraping (seleção individual por booleano)
 # ---------------------------------------------------------------------------
 
@@ -433,7 +408,6 @@ class Settings:
     score: ScoreConfig = field(default_factory=ScoreConfig)
     openrouter: OpenRouterConfig = field(default_factory=OpenRouterConfig)
     sender: SenderConfig = field(default_factory=SenderConfig)
-    title_review: TitleReviewConfig = field(default_factory=TitleReviewConfig)
     sqlite: SQLiteConfig = field(default_factory=SQLiteConfig)
     redis: RedisConfig = field(default_factory=RedisConfig)
     sources: SourcesConfig = field(default_factory=SourcesConfig)
