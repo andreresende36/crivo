@@ -13,9 +13,26 @@ import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from supabase import AsyncClient, acreate_client
 
 from src.config import settings
 from src.database.storage_manager import StorageManager
+
+# ---------------------------------------------------------------------------
+# Cliente Supabase leve para RPCs de leitura (sem overhead do StorageManager)
+# ---------------------------------------------------------------------------
+_supabase_rpc_client: AsyncClient | None = None
+
+
+async def _get_rpc_client() -> AsyncClient:
+    """Retorna (ou cria) um cliente Supabase async singleton para RPCs de leitura."""
+    global _supabase_rpc_client
+    if _supabase_rpc_client is None:
+        _supabase_rpc_client = await acreate_client(
+            settings.supabase.url,
+            settings.supabase.service_role_key or settings.supabase.anon_key,
+        )
+    return _supabase_rpc_client
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -199,24 +216,29 @@ async def list_offers(
     page: int = 1,
     page_size: int = 25,
 ):
-    """Listagem paginada de ofertas com filtros server-side."""
-    async with StorageManager() as storage:
-        params = {
-            "p_status": status,
-            "p_category_id": category_id,
-            "p_search": search,
-            "p_min_price": min_price,
-            "p_max_price": max_price,
-            "p_min_discount": min_discount,
-            "p_min_score": min_score,
-            "p_date_from": date_from,
-            "p_date_to": date_to,
-            "p_sort_by": sort_by,
-            "p_sort_dir": sort_dir,
-            "p_page": page,
-            "p_page_size": page_size,
-        }
-        data = await _call_rpc(storage, "fn_admin_offers_listing", params)
+    """Listagem paginada de ofertas com filtros server-side (RPC direto, sem StorageManager)."""
+    params = {
+        "p_status": status,
+        "p_category_id": category_id,
+        "p_search": search,
+        "p_min_price": min_price,
+        "p_max_price": max_price,
+        "p_min_discount": min_discount,
+        "p_min_score": min_score,
+        "p_date_from": date_from,
+        "p_date_to": date_to,
+        "p_sort_by": sort_by,
+        "p_sort_dir": sort_dir,
+        "p_page": page,
+        "p_page_size": page_size,
+    }
+    try:
+        client = await _get_rpc_client()
+        resp = await client.rpc("fn_admin_offers_listing", params).execute()
+        data = resp.data
+    except Exception as exc:
+        logger.warning("list_offers_rpc_failed", error=str(exc))
+        return {"offers": [], "total": 0, "counts": {}}
     if data is None:
         return {"offers": [], "total": 0, "counts": {}}
     return data
