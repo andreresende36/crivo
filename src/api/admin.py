@@ -216,7 +216,7 @@ async def list_offers(
             "p_page": page,
             "p_page_size": page_size,
         }
-        data = _call_rpc(storage, "fn_admin_offers_listing", params)
+        data = await _call_rpc(storage, "fn_admin_offers_listing", params)
     if data is None:
         return {"offers": [], "total": 0, "counts": {}}
     return data
@@ -492,7 +492,7 @@ async def analytics_daily(
 ):
     """Métricas diárias para gráficos trend."""
     async with StorageManager() as storage:
-        data = _call_rpc(storage, "fn_daily_metrics", {"days_back": days})
+        data = await _call_rpc(storage, "fn_daily_metrics", {"days_back": days})
     return {"data": data}
 
 
@@ -502,7 +502,7 @@ async def analytics_hourly(
 ):
     """Envios por hora de hoje."""
     async with StorageManager() as storage:
-        data = _call_rpc(storage, "fn_hourly_sends", {})
+        data = await _call_rpc(storage, "fn_hourly_sends", {})
     return {"data": data}
 
 
@@ -513,7 +513,7 @@ async def analytics_funnel(
 ):
     """Funil de conversão."""
     async with StorageManager() as storage:
-        data = _call_rpc(storage, "fn_conversion_funnel", {"hours_back": hours})
+        data = await _call_rpc(storage, "fn_conversion_funnel", {"hours_back": hours})
     return {"data": data}
 
 
@@ -598,15 +598,15 @@ def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
     return False
 
 
-def _call_rpc(
+async def _call_rpc(
     storage: StorageManager,
     fn_name: str,
     params: dict[str, Any],
 ) -> list[dict] | dict | None:
-    """Chama uma RPC function do Supabase."""
+    """Chama uma RPC function do Supabase (async)."""
     if storage._using_supabase:
         try:
-            resp = storage._supabase._client.rpc(fn_name, params).execute()
+            resp = await storage._supabase._client.rpc(fn_name, params).execute()
             return resp.data
         except Exception as exc:
             logger.warning("rpc_call_failed", fn=fn_name, error=str(exc))
