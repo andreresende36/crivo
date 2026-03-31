@@ -257,24 +257,20 @@ async def generate_offer_suggestions(
     """Gera 3 sugestoes de titulo + 3 sugestoes de corpo via IA."""
     from src.distributor.suggestion_generator import generate_suggestions
 
-    async with StorageManager() as storage:
-        # Buscar dados do produto para a oferta
-        if storage._using_supabase:
-            resp = (
-                storage._supabase._client.table("scored_offers")
-                .select("product_id, products!inner(title, current_price, original_price, discount_percent, free_shipping, rating_stars, rating_count, categories(name))")
-                .eq("id", offer_id)
-                .single()
-                .execute()
-            )
-            if not resp.data:
-                raise HTTPException(status_code=404, detail=_NOT_FOUND)
-            row = resp.data
-            product = row["products"]
-            category = product.get("categories", {})
-            category_name = category.get("name", "") if category else ""
-        else:
-            raise HTTPException(status_code=501, detail="Sugestoes requerem Supabase")
+    client = await _get_rpc_client()
+    resp = await (
+        client.table("scored_offers")
+        .select("product_id, products!inner(title, current_price, original_price, discount_percent, free_shipping, rating_stars, rating_count, categories(name))")
+        .eq("id", offer_id)
+        .maybe_single()
+        .execute()
+    )
+    if not resp or not resp.data:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    row = resp.data
+    product = row["products"]
+    category = product.get("categories", {})
+    category_name = category.get("name", "") if category else ""
 
     suggestions = await generate_suggestions(
         product_title=product["title"],
@@ -473,7 +469,7 @@ async def get_settings(
 ):
     """Retorna configurações editáveis do sistema."""
     async with StorageManager() as storage:
-        overrides = _get_admin_settings(storage)
+        overrides = await _get_admin_settings(storage)
 
     return {
         "current": {
@@ -498,7 +494,7 @@ async def update_settings(
     """Atualiza configurações do admin (persistidas em admin_settings)."""
     async with StorageManager() as storage:
         for key, value in body.settings.items():
-            _set_admin_setting(storage, key, value)
+            await _set_admin_setting(storage, key, value)
     return {"ok": True}
 
 
@@ -567,7 +563,7 @@ async def _update_scored_offer(
     """Atualiza campos arbitrários de um scored_offer."""
     if storage._using_supabase:
         try:
-            resp = (
+            resp = await (
                 storage._supabase._client.table("scored_offers")
                 .update(fields)
                 .eq("id", scored_offer_id)
@@ -594,22 +590,22 @@ async def _update_scored_offer(
             return False
 
 
-def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
+async def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
     """Lê todas as configurações do admin_settings."""
     if storage._using_supabase:
         try:
-            resp = storage._supabase._client.table("admin_settings").select("*").execute()
+            resp = await storage._supabase._client.table("admin_settings").select("*").execute()
             return {row["key"]: row["value"] for row in (resp.data or [])}
         except Exception:
             return {}
     return {}
 
 
-def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
+async def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
     """Upsert de uma configuração no admin_settings."""
     if storage._using_supabase:
         try:
-            storage._supabase._client.table("admin_settings").upsert(
+            await storage._supabase._client.table("admin_settings").upsert(
                 {"key": key, "value": value},
                 on_conflict="key",
             ).execute()
