@@ -94,7 +94,14 @@ pnpm-debug.log*
 
 # --- Project-specific ---
 data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.json
 *.sqlite
 debug/
 reference/
 .docker/
+
+# --- Claude Code — session files ---
+.claude/read_files_cache_*.txt
+.claude/session_started_*

@@ -118,7 +118,7 @@ def _offer_to_product(offer: UnsentOfferRow) -> ScrapedProduct:
 
 
 async def _get_affiliate_url(
-    storage: StorageManager,
+    storage: "StorageManager",
     offer: UnsentOfferRow,
     product_id: str,
     ml_id: str,
@@ -145,7 +145,7 @@ async def _get_affiliate_url(
 async def _publish_telegram(
     bot: TelegramBot,
     msg: Any,
-    storage: StorageManager,
+    storage: "StorageManager",
     scored_offer_id: str,
     ml_id: str,
     offer: UnsentOfferRow,
@@ -181,7 +181,7 @@ async def _publish_telegram(
 
 
 async def send_next_offer(
-    storage: StorageManager,
+    storage: "StorageManager",
     telegram_bot: TelegramBot | None = None,
 ) -> bool:
     """
