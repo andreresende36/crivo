@@ -6,9 +6,9 @@ Usa mocks para evitar chamadas reais ao Mercado Livre.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.scraper.base_scraper import BaseScraper, ScrapedProduct, USER_AGENTS
+from crivo.scraper.base_scraper import BaseScraper, ScrapedProduct, USER_AGENTS
 from bs4 import Tag
-from src.scraper.ml_scraper import MLScraper, ScrapeSource
+from crivo.scraper.ml_scraper import MLScraper, ScrapeSource
 
 
 # ---------------------------------------------------------------------------

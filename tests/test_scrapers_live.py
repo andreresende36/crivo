@@ -11,7 +11,7 @@ Flags úteis:
 """
 
 import pytest
-from src.scraper.ml_scraper import MLScraper, ScrapeSource
+from crivo.scraper.ml_scraper import MLScraper, ScrapeSource
 
 
 @pytest.mark.asyncio

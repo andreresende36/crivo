@@ -14,6 +14,10 @@
     ".claude/mcp-servers/*"
   ],
   "scripts": {
+    "codegen": "bash scripts/codegen.sh",
+    "build": "pnpm --filter '@crivo/types' build && pnpm --filter '@crivo/admin' build",
+    "dev": "pnpm --filter '@crivo/admin' dev",
+    "test:admin": "pnpm --filter '@crivo/admin' lint",
     "claude:index": "tsx .claude/scripts/index-project.ts src",
     "mcp:build": "npm run build --workspaces --if-present",
     "mcp:install": "npm install --workspaces"

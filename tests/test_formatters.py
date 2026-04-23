@@ -4,8 +4,8 @@ Atualizado para Style Guide v3.
 """
 import pytest
 
-from src.scraper.base_scraper import ScrapedProduct
-from src.distributor.message_formatter import MessageFormatter
+from crivo.scraper.base_scraper import ScrapedProduct
+from crivo.distributor.message_formatter import MessageFormatter
 
 
 # ---------------------------------------------------------------------------

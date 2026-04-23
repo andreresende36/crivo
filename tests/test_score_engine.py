@@ -15,11 +15,11 @@ from unittest.mock import patch
 
 import pytest
 
-from src.scraper.base_scraper import ScrapedProduct
-from src.analyzer.score_engine import (
+from crivo.scraper.base_scraper import ScrapedProduct
+from crivo.analyzer.score_engine import (
     ScoreEngine,
 )
-from src.analyzer.fake_discount_detector import FakeDiscountDetector
+from crivo.analyzer.fake_discount_detector import FakeDiscountDetector
 
 
 # ---------------------------------------------------------------------------

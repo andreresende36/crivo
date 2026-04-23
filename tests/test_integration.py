@@ -12,13 +12,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 
-from src.scraper.base_scraper import ScrapedProduct
-from src.analyzer.score_engine import ScoreEngine
-from src.analyzer.fake_discount_detector import FakeDiscountDetector
-from src.distributor.message_formatter import MessageFormatter
-from src.database.sqlite_fallback import SQLiteFallback
-from src.database.storage_manager import StorageManager
-from src.database.exceptions import SupabaseError
+from crivo.scraper.base_scraper import ScrapedProduct
+from crivo.analyzer.score_engine import ScoreEngine
+from crivo.analyzer.fake_discount_detector import FakeDiscountDetector
+from crivo.distributor.message_formatter import MessageFormatter
+from crivo.database.sqlite_fallback import SQLiteFallback
+from crivo.database.storage_manager import StorageManager
+from crivo.database.exceptions import SupabaseError
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +295,7 @@ class TestLogRedaction:
     """Testa que o processador de redação mascara dados sensíveis."""
 
     def test_redact_anthropic_key(self):
-        from src.logging_config import _redact_sensitive_data
+        from crivo.logging_config import _redact_sensitive_data
 
         event = {"error": "Auth failed with key sk-ant-api03-abcdefghijklmnop"}
         result = _redact_sensitive_data(None, None, event)
@@ -304,7 +304,7 @@ class TestLogRedaction:
         assert "****" in result["error"]
 
     def test_redact_jwt(self):
-        from src.logging_config import _redact_sensitive_data
+        from crivo.logging_config import _redact_sensitive_data
 
         jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"  # noqa: E501
         event = {"detail": f"Failed: {jwt}"}
@@ -313,7 +313,7 @@ class TestLogRedaction:
         assert "****" in result["detail"]
 
     def test_redact_bearer(self):
-        from src.logging_config import _redact_sensitive_data
+        from crivo.logging_config import _redact_sensitive_data
 
         event = {"header": "Bearer eyJhbGciOiJIUzI1NiJ9.abc123.xyz"}
         result = _redact_sensitive_data(None, None, event)
@@ -321,7 +321,7 @@ class TestLogRedaction:
         assert "Bearer ****" in result["header"]
 
     def test_non_string_values_untouched(self):
-        from src.logging_config import _redact_sensitive_data
+        from crivo.logging_config import _redact_sensitive_data
 
         event = {"count": 42, "ok": True, "items": ["a", "b"]}
         result = _redact_sensitive_data(None, None, event)
@@ -347,7 +347,7 @@ class TestWhatsAppRateLimiting:
             mock_cfg.whatsapp.send_delay = 0.01
             mock_cfg.whatsapp.max_messages_per_minute = 5
 
-            from src.distributor.whatsapp_notifier import WhatsAppNotifier
+            from crivo.distributor.whatsapp_notifier import WhatsAppNotifier
 
             notifier = WhatsAppNotifier()
 
