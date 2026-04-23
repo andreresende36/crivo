@@ -4,6 +4,13 @@ members = ["packages/backend", "packages/py-types"]
 [tool.uv.sources]
 crivo-types = { workspace = true }
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["packages/backend/tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+addopts = "--tb=short --ignore=packages/backend/tests/test_scrapers_live.py"
+
 [tool.uv]
 dev-dependencies = [
     "ruff>=0.9",
