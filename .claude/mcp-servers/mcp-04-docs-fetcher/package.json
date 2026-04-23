@@ -1,0 +1,25 @@
+{
+  "name": "mcp-docs-fetcher",
+  "version": "1.1.0",
+  "description": "MCP server that fetches and caches documentation for 20+ libraries (uses node:sqlite built-in)",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "node-html-parser": "^6.1.13",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.5"
+  }
+}

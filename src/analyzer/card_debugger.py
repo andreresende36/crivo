@@ -7,7 +7,6 @@ Uso (chamado automaticamente em main.py quando SCRAPER_DEBUG_SCREENSHOTS=true):
     path = generate_report(rejected_scored, screenshots, run_id)
 """
 
-from __future__ import annotations
 
 import base64
 import io

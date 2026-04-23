@@ -81,7 +81,22 @@
       "mcp__supabase__get_publishable_keys",
       "Bash(curl -s -X POST http://localhost:8000/api/admin/scrape-now)",
       "mcp__sonarqube__markIssueWontFix",
-      "mcp__sonarqube__issues"
+      "mcp__sonarqube__issues",
+      "mcp__supabase-crivo__get_logs",
+      "Bash(rtk ls *)",
+      "Bash(xargs ls *)",
+      "Bash(rtk read *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk find *)",
+      "Bash(rtk pytest *)",
+      "Bash(python -c \"from src.database.supabase_client import SupabaseClient; print\\('OK'\\)\")",
+      "Bash(python -c \"from src.database.supabase_client import SupabaseClient; from src.database.storage_manager import StorageManager; print\\('OK'\\)\")",
+      "Bash(rtk git *)",
+      "Bash(sort -t'[' -k2)",
+      "Bash(sed -i '' -e 's/Optional\\\\[str\\\\]/str | None/g' -e 's/Optional\\\\[float\\\\]/float | None/g' -e 's/Optional\\\\[dict\\\\]/dict | None/g' -e 's/Optional\\\\[AsyncClient\\\\]/AsyncClient | None/g' src/database/supabase_client.py)",
+      "Bash(sed -i '' -e 's/Optional\\\\[str\\\\]/str | None/g' -e 's/Optional\\\\[float\\\\]/float | None/g' -e 's/Optional\\\\[dict\\\\]/dict | None/g' -e 's/Optional\\\\[Path\\\\]/Path | None/g' -e 's/Optional\\\\[aiosqlite\\\\.Connection\\\\]/aiosqlite.Connection | None/g' src/database/sqlite_fallback.py)",
+      "Bash(rtk tsc *)",
+      "Bash(rtk npm *)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -13,7 +13,6 @@ Gera títulos catchy para ofertas usando Claude Haiku via OpenRouter.
   - Mix livre (20%)
 """
 
-from __future__ import annotations
 
 import asyncio
 import re

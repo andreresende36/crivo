@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Image from "next/image";
 import type { OfferRow, AISuggestions } from "@/lib/types";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
@@ -110,9 +111,10 @@ export function OfferEditModal({
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-secondary border border-border shrink-0 overflow-hidden flex items-center justify-center">
+            <div className="w-10 h-10 rounded-lg bg-secondary border border-border shrink-0 overflow-hidden flex items-center justify-center relative">
               {offer.thumbnail_url ? (
-                <img src={offer.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                // URL externa do MercadoLivre — unoptimized até configurar domínio no next.config
+                <Image src={offer.thumbnail_url} fill alt="" className="object-cover" unoptimized />
               ) : (
                 <div className="w-full h-full bg-muted" />
               )}

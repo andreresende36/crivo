@@ -5,7 +5,6 @@ Endpoints para CRUD de ofertas, gerenciamento de fila, envio manual e scraping.
 Autenticação: valida JWT do Supabase Auth via header Authorization: Bearer <token>.
 """
 
-from __future__ import annotations
 
 from typing import Annotated, Any
 
@@ -594,7 +593,7 @@ async def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
     """Lê todas as configurações do admin_settings."""
     if storage._using_supabase:
         try:
-            resp = await storage._supabase._client.table("admin_settings").select("*").execute()
+            resp = await storage._supabase._client.table("admin_settings").select("key, value").execute()
             return {row["key"]: row["value"] for row in (resp.data or [])}
         except Exception:
             return {}

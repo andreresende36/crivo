@@ -1,37 +1,100 @@
-# Ambiente
-.env
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-*.pyo
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 
-# Dados locais
-data/
-logs/
-*.db
-*.sqlite
-
-# Docker
-.docker/
-
-# IDE
+# --- Editors ---
 .vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
 
-# macOS
-.DS_Store
+# --- Env / secrets ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
 
-# Claude
-.claude/
+# --- Logs ---
+*.log
+logs/
 
-# Debug
+# --- Node / build artifacts ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# --- Claude Code — personal memory (não vai no git) ---
+memory/
+inbox/
+.claude/context.db
+.claude/scripts/*.db
+.claude/mcp-servers/*/dist/
+.claude/mcp-servers/*/node_modules/
+
+# --- Claude Code — keep in git ---
+!.claude/hooks/
+!.claude/skills/
+!.claude/context/
+!.claude/settings.json
+!CLAUDE.md
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Node / TypeScript ---
+.next/
+out/
+.turbo/
+.cache/
+.nyc_output/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.vite/
+
+# --- Project-specific ---
+data/*.db
+*.sqlite
 debug/
-
-# Documentos de referência (não versionados)
 reference/
+.docker/

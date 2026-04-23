@@ -10,7 +10,6 @@ Fluxo:
 Os links gerados (meli.la/xxx) sao permanentes e garantem atribuicao de comissao.
 """
 
-from __future__ import annotations
 
 import re
 

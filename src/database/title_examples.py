@@ -3,7 +3,6 @@ Crivo — Title Examples
 Dataclasses para o sistema de feedback de títulos.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 

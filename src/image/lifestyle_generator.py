@@ -10,7 +10,6 @@ O modelo do Passo 2 é configurável via LIFESTYLE_IMAGE_MODEL no .env.
 Ambos os passos são síncronos (httpx) — o wrapper async roda em executor.
 """
 
-from __future__ import annotations
 
 import asyncio
 import base64

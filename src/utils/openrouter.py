@@ -5,7 +5,6 @@ Shared constants, headers builder, call wrapper, and JSON parse helper.
 Used by: title_generator, product_image_selector.
 """
 
-from __future__ import annotations
 
 import json
 from typing import Any

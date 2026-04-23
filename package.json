@@ -1,0 +1,21 @@
+{
+  "name": "crivo",
+  "version": "1.0.0",
+  "description": "Scraper de ofertas ML · score engine · bots Telegram/WhatsApp · geração de imagens IA · painel admin Next.js",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.19.0"
+  },
+  "workspaces": [
+    ".claude/mcp-servers/*"
+  ],
+  "scripts": {
+    "claude:index": "tsx .claude/scripts/index-project.ts src",
+    "mcp:build": "npm run build --workspaces --if-present",
+    "mcp:install": "npm install --workspaces"
+  }
+}

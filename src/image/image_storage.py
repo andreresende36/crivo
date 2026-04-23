@@ -3,7 +3,6 @@ Crivo — Image Storage
 Upload e recuperação de imagens aprimoradas via Supabase Storage.
 """
 
-from __future__ import annotations
 
 import asyncio
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -27,7 +28,7 @@ export function MobileNav() {
       </SheetTrigger>
       <SheetContent side="left" className="w-[260px] p-0">
         <div className="flex items-center gap-2.5 px-5 h-16 border-b border-border">
-          <img src="/icon.png" alt="Crivo Icon" className="w-8 h-8" />
+          <Image src="/icon.png" alt="Crivo Icon" width={32} height={32} />
           <span className="font-display font-extrabold tracking-widest text-lg">
             <span className="text-[#09090B] dark:text-[#E4E4E7]">CRI</span>
             <span className="text-[#A78BFA]">VO</span>

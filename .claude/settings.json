@@ -1,0 +1,109 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/secret-scanner.sh" }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/context-request-optimizer.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/startup-context-loader.sh" }
+        ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/decision-logger.sh" }
+        ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/promise-checker.sh" }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/typescript-guard.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/session-end-summary.sh" }
+        ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/cost-estimator.sh" }
+        ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/pr-description-generator.sh" }
+        ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/test-gate.sh" }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "mcp-01-context-intelligence": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-01-context-intelligence/dist/index.js"]
+    },
+    "mcp-02-git-intelligence": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-02-git-intelligence/dist/index.js"]
+    },
+    "mcp-03-database-inspector": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-03-database-inspector/dist/index.js"]
+    },
+    "mcp-04-docs-fetcher": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-04-docs-fetcher/dist/index.js"]
+    },
+    "mcp-05-env-inspector": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-05-env-inspector/dist/index.js"]
+    },
+    "mcp-06-api-health": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-06-api-health/dist/index.js"]
+    },
+    "mcp-07-code-quality": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-07-code-quality/dist/index.js"]
+    },
+    "mcp-08-dependency-scanner": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-08-dependency-scanner/dist/index.js"]
+    },
+    "mcp-09-test-intelligence": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-09-test-intelligence/dist/index.js"]
+    },
+    "mcp-10-log-analyzer": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-10-log-analyzer/dist/index.js"]
+    },
+    "mcp-12-infrastructure-tools": {
+      "command": "node",
+      "args": [".claude/mcp-servers/mcp-12-infrastructure-tools/dist/index.js"]
+    }
+  }
+}

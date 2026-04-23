@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className={cn("flex items-center h-16 border-b border-sidebar-border relative transition-all duration-300", isCollapsed ? "justify-center px-0" : "px-5")}>
         <div className={cn("flex items-center gap-2.5 overflow-hidden transition-all duration-300", isCollapsed ? "opacity-0 w-0" : "opacity-100")}>
-          <img src="/icon.png" alt="Crivo Icon" className="w-10 h-10 shrink-0" />
+          <Image src="/icon.png" alt="Crivo Icon" width={40} height={40} className="shrink-0" />
           <div className="shrink-0">
             <div className="leading-none">
               <span className="font-display font-extrabold tracking-widest text-xl">
@@ -84,7 +85,7 @@ export function Sidebar() {
         </div>
         
         {isCollapsed && (
-          <img src="/icon.png" alt="Crivo Icon" className="w-10 h-10 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+          <Image src="/icon.png" alt="Crivo Icon" width={40} height={40} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
         )}
 
         <button 

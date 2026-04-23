@@ -1,0 +1,28 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Crivo Runner",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "src.runner"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "Admin Panel",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "admin",
+        "--",
+        "--port",
+        "3001"
+      ],
+      "port": 3001
+    }
+  ]
+}

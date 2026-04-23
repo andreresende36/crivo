@@ -5,7 +5,6 @@ Checklist de validação pré-envio para garantir conformidade com o template.
 Validação soft: loga warnings mas não bloqueia o envio.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 

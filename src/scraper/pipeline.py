@@ -213,7 +213,7 @@ async def _save_products_fallback(
                 product_id=product_id,
                 rule_score=int(s.score),
                 final_score=int(s.score),
-                status="approved",
+                status="pending",
                 score_breakdown={
                     f.name: getattr(s.breakdown, f.name).final_score
                     for f in dc_fields(s.breakdown)
@@ -256,7 +256,7 @@ async def _save_approved(
                     "product_id": ids[s.product.ml_id],
                     "rule_score": int(s.score),
                     "final_score": int(s.score),
-                    "status": "approved",
+                    "status": "pending",
                     "score_breakdown": {
                         f.name: getattr(s.breakdown, f.name).final_score
                         for f in dc_fields(s.breakdown)

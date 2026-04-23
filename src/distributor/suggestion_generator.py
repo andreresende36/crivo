@@ -4,7 +4,6 @@ Gera 3 sugestoes de titulo + 3 sugestoes de corpo de mensagem para revisao no pa
 Usa Claude Haiku via OpenRouter em uma unica chamada.
 """
 
-from __future__ import annotations
 
 import asyncio
 import json

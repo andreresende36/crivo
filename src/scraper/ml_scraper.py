@@ -8,7 +8,6 @@ Uso:
     products = await scraper.scrape()
 """
 
-from __future__ import annotations
 
 import re
 import time

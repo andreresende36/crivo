@@ -1,6 +1,7 @@
 "use client";
 
 import type { OfferRow } from "@/lib/types";
+import Image from "next/image";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
   Sheet,
@@ -65,8 +66,9 @@ export function OfferPreviewCard({ offer, open, onClose, onEdit, onStatusChange 
         <div className="mt-6 space-y-6">
           {/* Thumbnail */}
           {offer.thumbnail_url && (
-            <div className="w-full h-48 bg-muted rounded-2xl flex items-center justify-center overflow-hidden border border-border">
-              <img src={offer.thumbnail_url} alt="" className="h-full object-contain mix-blend-multiply dark:mix-blend-screen opacity-90" />
+            <div className="w-full h-48 bg-muted rounded-2xl flex items-center justify-center overflow-hidden border border-border relative">
+              {/* URL externa do MercadoLivre — unoptimized até configurar domínio no next.config */}
+              <Image src={offer.thumbnail_url} fill alt="" className="object-contain mix-blend-multiply dark:mix-blend-screen opacity-90" unoptimized />
             </div>
           )}
 
