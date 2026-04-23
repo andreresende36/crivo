@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Image from "next/image";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSupabase } from "@/hooks/use-supabase";
 import { useAdminApi } from "@/hooks/use-admin-api";
 import {
@@ -134,7 +136,15 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
-function SystemAction({ icon: Icon, label, colorClass, onClick, loading }: any) {
+interface SystemActionProps {
+  icon: React.ElementType;
+  label: string;
+  colorClass: string;
+  onClick: () => void;
+  loading: boolean;
+}
+
+function SystemAction({ icon: Icon, label, colorClass, onClick, loading }: SystemActionProps) {
   return (
     <button
       onClick={onClick}
@@ -152,64 +162,60 @@ function SystemAction({ icon: Icon, label, colorClass, onClick, loading }: any) 
 export default function DashboardPage() {
   const supabase = useSupabase();
   const api = useAdminApi();
-  const [summary, setSummary] = useState<DailySummary | null>(null);
-  const [topDeals, setTopDeals] = useState<TopDeal[]>([]);
-  const [systemState, setSystemState] = useState<Record<string, unknown> | null>(null);
-  
+  const queryClient = useQueryClient();
+
   const [loadingScrape, setLoadingScrape] = useState(false);
   const [loadingSend, setLoadingSend] = useState(false);
-  const [loadingRefresh, setLoadingRefresh] = useState(false);
 
-  async function fetchData() {
-    setLoadingRefresh(true);
-    try {
-      // Summary from view
-      const { data: summaryData } = await supabase
-        .from("mv_last_24h_summary")
-        .select("*")
-        .single();
-      if (summaryData) setSummary(summaryData);
+  const { data: summary, isFetching: fetchingSummary } = useQuery<DailySummary | null>({
+    queryKey: ["dashboard-summary"],
+    queryFn: async () => {
+      const { data } = await supabase.from("mv_last_24h_summary").select("*").single();
+      return data ?? null;
+    },
+  });
 
-      // Top deals
-      const { data: deals } = await supabase
-        .from("vw_top_deals")
-        .select("*")
-        .limit(5);
-      if (deals) setTopDeals(deals);
+  const { data: topDeals = [], isFetching: fetchingDeals } = useQuery<TopDeal[]>({
+    queryKey: ["dashboard-top-deals"],
+    queryFn: async () => {
+      const { data } = await supabase.from("vw_top_deals").select("*").limit(5);
+      return data ?? [];
+    },
+  });
 
-      // System state from FastAPI
+  const { data: systemState = null, isFetching: fetchingState } = useQuery<Record<string, unknown> | null>({
+    queryKey: ["dashboard-system-state"],
+    queryFn: async () => {
       try {
-        const stateRes = await fetch(
+        const res = await fetch(
           `${process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000"}/api/state`
         );
-        if (stateRes.ok) setSystemState(await stateRes.json());
+        return res.ok ? res.json() : null;
       } catch {
-        // Keep previous state if failing silently
+        return null;
       }
-    } catch (err) {
-      console.error("Dashboard fetch error:", err);
-      toast.error("Erro ao sincronizar dashboard");
-    } finally {
-      setLoadingRefresh(false);
-    }
+    },
+  });
+
+  const loadingRefresh = fetchingSummary || fetchingDeals || fetchingState;
+
+  function invalidateDashboard() {
+    queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-top-deals"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-system-state"] });
   }
 
   useEffect(() => {
-    fetchData();
-
-    // Realtime: system_logs
     const channel = supabase
       .channel("dashboard-realtime")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "sent_offers" },
-        () => fetchData()
+        () => invalidateDashboard()
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -218,7 +224,7 @@ export default function DashboardPage() {
     try {
       await api.scrapeNow();
       toast.success("Scraping forçado iniciado");
-      await fetchData();
+      invalidateDashboard();
     } catch (err) {
       toast.error(`Falha no scaping: ${err instanceof Error ? err.message : "Erro!"}`);
     } finally {
@@ -231,7 +237,7 @@ export default function DashboardPage() {
     try {
       await api.sendNow();
       toast.success("Comando enviado com sucesso");
-      await fetchData();
+      invalidateDashboard();
     } catch (err) {
       toast.error(`Falha no envio: ${err instanceof Error ? err.message : "Erro!"}`);
     } finally {
@@ -345,7 +351,8 @@ export default function DashboardPage() {
                 
                 <div className="w-14 h-14 rounded-xl bg-secondary border border-border shrink-0 overflow-hidden relative flex items-center justify-center">
                    {deal.thumbnail_url ? (
-                     <img src={deal.thumbnail_url} alt="" className="w-full h-full object-cover mix-blend-multiply dark:mix-blend-screen opacity-90" />
+                     // URL externa do MercadoLivre — unoptimized até configurar domínio no next.config
+                     <Image src={deal.thumbnail_url} fill alt="" className="object-cover mix-blend-multiply dark:mix-blend-screen opacity-90" unoptimized />
                    ) : (
                      <div className="w-full h-full bg-muted" />
                    )}
@@ -466,7 +473,7 @@ export default function DashboardPage() {
                  label="Sincronizar Dashboard" 
                  colorClass="text-muted-foreground"
                  loading={loadingRefresh}
-                 onClick={() => fetchData()}
+                 onClick={() => invalidateDashboard()}
                />
              </div>
           </div>

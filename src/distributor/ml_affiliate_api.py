@@ -11,7 +11,6 @@ Uso:
     print(result.short_url)  # https://meli.la/xxxxx
 """
 
-from __future__ import annotations
 
 
 from dataclasses import dataclass
@@ -144,22 +143,8 @@ class MLAffiliateAPI:
         clean = parsed._replace(fragment="").geturl()
         return clean
 
-    async def _call_create_link_batch(
-        self, urls: list[str]
-    ) -> dict[str, AffiliateLink]:
-        """Chamada a API createLink com multiplas URLs."""
-        # Limpa URLs de tracking para URLs de produto
-        clean_to_original: dict[str, str] = {}
-        clean_urls: list[str] = []
-        for url in urls:
-            clean = self._clean_product_url(url)
-            clean_to_original[clean] = url
-            clean_urls.append(clean)
-
-        tag = self.cfg.affiliate_tag
-        payload = {"urls": clean_urls, "tag": tag}
-
-        headers = {
+    def _build_headers(self) -> dict[str, str]:
+        return {
             "accept": "application/json, text/plain, */*",
             "content-type": "application/json",
             "origin": "https://www.mercadolivre.com.br",
@@ -172,10 +157,50 @@ class MLAffiliateAPI:
             ),
         }
 
+    @staticmethod
+    def _parse_links(
+        data: dict,
+        clean_to_original: dict[str, str],
+        tag: str,
+    ) -> dict[str, AffiliateLink]:
+        results: dict[str, AffiliateLink] = {}
+        for item in data.get("urls", []):
+            if not item.get("created") and not item.get("short_url"):
+                logger.warning(
+                    "ml_affiliate_link_failed",
+                    origin_url=item.get("origin_url"),
+                    error=item,
+                )
+                continue
+            link = AffiliateLink(
+                short_url=item["short_url"],
+                long_url=item.get("long_url", ""),
+                ml_link_id=item.get("id", ""),
+                tag=item.get("tag", tag),
+            )
+            origin = item.get("origin_url", "")
+            original_url: str = clean_to_original.get(origin, origin) or origin
+            results[original_url] = link
+        return results
+
+    async def _call_create_link_batch(
+        self, urls: list[str]
+    ) -> dict[str, AffiliateLink]:
+        """Chamada a API createLink com multiplas URLs."""
+        clean_to_original: dict[str, str] = {}
+        clean_urls: list[str] = []
+        for url in urls:
+            clean = self._clean_product_url(url)
+            clean_to_original[clean] = url
+            clean_urls.append(clean)
+
+        tag = self.cfg.affiliate_tag
+        payload = {"urls": clean_urls, "tag": tag}
+
         try:
             async with httpx.AsyncClient(cookies=self._cookies, timeout=30) as client:
                 resp = await client.post(
-                    CREATE_LINK_URL, json=payload, headers=headers
+                    CREATE_LINK_URL, json=payload, headers=self._build_headers()
                 )
 
             if resp.status_code == 401:
@@ -185,43 +210,12 @@ class MLAffiliateAPI:
                     hint="Cookies expirados. Atualize ML_SESSION_COOKIES e ML_CSRF_TOKEN no .env",
                 )
                 return {}
-
             if resp.status_code != 200:
-                logger.error(
-                    "ml_affiliate_api_error",
-                    status=resp.status_code,
-                    body=resp.text[:500],
-                )
+                logger.error("ml_affiliate_api_error", status=resp.status_code, body=resp.text[:500])
                 return {}
 
-            data = resp.json()
-            results: dict[str, AffiliateLink] = {}
-
-            for item in data.get("urls", []):
-                if not item.get("created") and not item.get("short_url"):
-                    logger.warning(
-                        "ml_affiliate_link_failed",
-                        origin_url=item.get("origin_url"),
-                        error=item,
-                    )
-                    continue
-
-                link = AffiliateLink(
-                    short_url=item["short_url"],
-                    long_url=item.get("long_url", ""),
-                    ml_link_id=item.get("id", ""),
-                    tag=item.get("tag", tag),
-                )
-                origin = item.get("origin_url", "")
-                # Mapeia de volta para a URL original (tracking)
-                original_url: str = clean_to_original.get(origin, origin) or origin
-                results[original_url] = link
-
-            logger.info(
-                "ml_affiliate_links_created",
-                requested=len(urls),
-                created=len(results),
-            )
+            results = self._parse_links(resp.json(), clean_to_original, tag)
+            logger.info("ml_affiliate_links_created", requested=len(urls), created=len(results))
             return results
 
         except httpx.TimeoutException:

@@ -17,10 +17,9 @@ Uso direto:
     await db.close()
 """
 
-from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Self
 
 import structlog
 from supabase import AsyncClient, acreate_client
@@ -44,13 +43,13 @@ class SupabaseClient:
 
     def __init__(self) -> None:
         self.cfg = settings.supabase
-        self._client: Optional[AsyncClient] = None
+        self._client: AsyncClient | None = None
 
     # ------------------------------------------------------------------
     # Ciclo de vida
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> SupabaseClient:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 
@@ -65,7 +64,7 @@ class SupabaseClient:
         )
         logger.info("supabase_connected", url=self.cfg.url)
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Libera a conexão."""
         self._client = None
         logger.info("supabase_closed")
@@ -102,7 +101,7 @@ class SupabaseClient:
     # badges
     # ------------------------------------------------------------------
 
-    async def get_or_create_badge(self, name: str) -> Optional[str]:
+    async def get_or_create_badge(self, name: str) -> str | None:
         """Retorna o ID do badge pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -130,7 +129,7 @@ class SupabaseClient:
     # categories
     # ------------------------------------------------------------------
 
-    async def get_or_create_category(self, name: str) -> Optional[str]:
+    async def get_or_create_category(self, name: str) -> str | None:
         """Retorna o ID da categoria pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -169,7 +168,7 @@ class SupabaseClient:
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_all_categories") from exc
 
-    async def get_or_create_marketplace(self, name: str) -> Optional[str]:
+    async def get_or_create_marketplace(self, name: str) -> str | None:
         """Retorna o ID do marketplace pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -211,7 +210,7 @@ class SupabaseClient:
         category_id: str | None = None,
         marketplace_id: str | None = None,
         brand_id: str | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Insere ou atualiza um produto pelo ml_id.
 
@@ -365,7 +364,7 @@ class SupabaseClient:
         except Exception as exc:
             raise SupabaseError(str(exc), operation="add_price_history_batch") from exc
 
-    async def get_product_id(self, ml_id: str) -> Optional[str]:
+    async def get_product_id(self, ml_id: str) -> str | None:
         """Retorna o UUID interno de um produto pelo ml_id."""
         try:
             result = (
@@ -389,8 +388,8 @@ class SupabaseClient:
         self,
         product_id: str,
         price: float,
-        original_price: Optional[float] = None,
-        pix_price: Optional[float] = None,
+        original_price: float | None = None,
+        pix_price: float | None = None,
     ) -> bool:
         """
         Registra o preço atual de um produto no histórico.
@@ -451,7 +450,7 @@ class SupabaseClient:
         final_score: int,
         status: str,
         score_breakdown: dict | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Salva o resultado da análise de uma oferta.
 
@@ -543,7 +542,14 @@ class SupabaseClient:
         try:
             result = (
                 await self._db.table("vw_approved_unsent")
-                .select("*")
+                .select(
+                    "product_id, ml_id, title, current_price, original_price, pix_price,"
+                    " discount_percent, discount_type, free_shipping, full_shipping, brand,"
+                    " thumbnail_url, product_url, rating_stars, rating_count,"
+                    " installments_without_interest, installment_count, installment_value,"
+                    " category, badge, scored_offer_id, final_score, scored_at,"
+                    " queue_priority, score_override, admin_notes"
+                )
                 .limit(limit)
                 .execute()
             )
@@ -667,7 +673,7 @@ class SupabaseClient:
     # system_logs
     # ------------------------------------------------------------------
 
-    async def log_event(self, event_type: str, details: Optional[dict] = None) -> bool:
+    async def log_event(self, event_type: str, details: dict | None = None) -> bool:
         """
         Registra um evento operacional no banco para monitoramento.
 
@@ -698,7 +704,7 @@ class SupabaseClient:
             raise SupabaseError(str(exc), operation="log_event") from exc
 
     async def get_recent_logs(
-        self, event_type: Optional[str] = None, limit: int = 100
+        self, event_type: str | None = None, limit: int = 100
     ) -> list[dict]:
         """Retorna os logs mais recentes, opcionalmente filtrado por event_type."""
         try:
@@ -724,7 +730,7 @@ class SupabaseClient:
         name: str,
         affiliate_tag: str,
         email: str | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Retorna o ID do user pela tag. Cria se nao existir."""
         try:
             result = (
@@ -751,12 +757,12 @@ class SupabaseClient:
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_or_create_user") from exc
 
-    async def get_user_by_tag(self, affiliate_tag: str) -> Optional[dict]:
+    async def get_user_by_tag(self, affiliate_tag: str) -> dict | None:
         """Retorna o user completo pela tag."""
         try:
             result = (
                 await self._db.table("users")
-                .select("*")
+                .select("id, name, affiliate_tag, email, telegram_id, whatsapp_number, is_active, created_at")
                 .eq("affiliate_tag", affiliate_tag)
                 .limit(1)
                 .execute()
@@ -771,12 +777,12 @@ class SupabaseClient:
 
     async def get_affiliate_link(
         self, product_id: str, user_id: str
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Retorna o affiliate link para um produto+user, ou None."""
         try:
             result = (
                 await self._db.table("affiliate_links")
-                .select("*")
+                .select("id, product_id, user_id, short_url, long_url, ml_link_id, created_at")
                 .eq("product_id", product_id)
                 .eq("user_id", user_id)
                 .limit(1)
@@ -793,7 +799,7 @@ class SupabaseClient:
         short_url: str,
         long_url: str = "",
         ml_link_id: str = "",
-    ) -> Optional[str]:
+    ) -> str | None:
         """Salva um affiliate link (upsert por product_id+user_id)."""
         data = {
             "product_id": product_id,
@@ -876,7 +882,7 @@ class SupabaseClient:
     # brands
     # ------------------------------------------------------------------
 
-    async def get_or_create_brand(self, name: str) -> Optional[str]:
+    async def get_or_create_brand(self, name: str) -> str | None:
         """Retorna o ID da brand pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -911,7 +917,7 @@ class SupabaseClient:
     # title_examples
     # ------------------------------------------------------------------
 
-    async def save_title_example(self, data: dict) -> Optional[str]:
+    async def save_title_example(self, data: dict) -> str | None:
         """Salva um exemplo de título aprovado/editado."""
         row = {
             "scored_offer_id": data.get("scored_offer_id"),

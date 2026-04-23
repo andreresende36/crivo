@@ -16,13 +16,12 @@ Diferenças em relação ao Supabase:
   - Coluna extra `synced` (0/1) para controle de sincronização
 """
 
-from __future__ import annotations
 
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, TYPE_CHECKING, Optional
+from typing import Any, TYPE_CHECKING, Self
 
 import aiosqlite
 import structlog
@@ -42,6 +41,11 @@ _SQL_GET_BRAND = "SELECT id FROM brands WHERE name = ?"
 _SQL_GET_CATEGORY = "SELECT id FROM categories WHERE name = ?"
 _SQL_GET_MARKETPLACE = "SELECT id FROM marketplaces WHERE name = ?"
 
+_LOOKUP_TABLES: frozenset[str] = frozenset({"badges", "categories", "marketplaces"})
+_SYNC_TABLES: frozenset[str] = frozenset(
+    {"products", "price_history", "scored_offers", "sent_offers", "system_logs", "affiliate_links"}
+)
+
 
 class SQLiteFallback:
     """
@@ -58,15 +62,15 @@ class SQLiteFallback:
         await db.close()
     """
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or settings.sqlite.db_path
-        self._conn: Optional[aiosqlite.Connection] = None
+        self._conn: aiosqlite.Connection | None = None
 
     # ------------------------------------------------------------------
     # Ciclo de vida
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> SQLiteFallback:
+    async def __aenter__(self) -> Self:
         await self.initialize()
         return self
 
@@ -562,6 +566,8 @@ class SQLiteFallback:
         remote_items: dict[str, str],
     ) -> None:
         """Sincroniza UUIDs de uma tabela de lookup (badges/categories/marketplaces)."""
+        if table not in _LOOKUP_TABLES:
+            raise ValueError(f"Tabela não permitida para sync de lookup: {table!r}")
         for name, remote_id in remote_items.items():
             cursor = await self._db.execute(
                 f"SELECT id FROM {table} WHERE name = ?",  # noqa: S608
@@ -649,7 +655,7 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="get_all_badges") from exc
 
-    async def get_or_create_badge(self, name: str) -> Optional[str]:
+    async def get_or_create_badge(self, name: str) -> str | None:
         """Retorna o ID do badge pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -719,7 +725,7 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="get_all_brands") from exc
 
-    async def get_or_create_brand(self, name: str) -> Optional[str]:
+    async def get_or_create_brand(self, name: str) -> str | None:
         """Retorna o ID da brand pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -788,7 +794,7 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="get_all_categories") from exc
 
-    async def get_or_create_category(self, name: str) -> Optional[str]:
+    async def get_or_create_category(self, name: str) -> str | None:
         """Retorna o ID da categoria pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -855,7 +861,7 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="get_all_marketplaces") from exc
 
-    async def get_or_create_marketplace(self, name: str) -> Optional[str]:
+    async def get_or_create_marketplace(self, name: str) -> str | None:
         """Retorna o ID do marketplace pelo nome. Cria se não existir."""
         if not name:
             return None
@@ -917,12 +923,12 @@ class SQLiteFallback:
     async def upsert_product(
         self,
         product: ScrapedProduct,
-        product_id: Optional[str] = None,
-        badge_id: Optional[str] = None,
-        category_id: Optional[str] = None,
-        marketplace_id: Optional[str] = None,
-        brand_id: Optional[str] = None,
-    ) -> Optional[str]:
+        product_id: str | None = None,
+        badge_id: str | None = None,
+        category_id: str | None = None,
+        marketplace_id: str | None = None,
+        brand_id: str | None = None,
+    ) -> str | None:
         """
         Insere ou atualiza um produto pelo ml_id.
 
@@ -1308,7 +1314,7 @@ class SQLiteFallback:
                 str(exc), operation="check_duplicate", ml_id=ml_id
             ) from exc
 
-    async def get_product_id(self, ml_id: str) -> Optional[str]:
+    async def get_product_id(self, ml_id: str) -> str | None:
         """Retorna o UUID interno de um produto pelo ml_id."""
         try:
             cursor = await self._db.execute(
@@ -1329,8 +1335,8 @@ class SQLiteFallback:
         self,
         product_id: str,
         price: float,
-        original_price: Optional[float] = None,
-        pix_price: Optional[float] = None,
+        original_price: float | None = None,
+        pix_price: float | None = None,
     ) -> bool:
         """Registra o preço atual no histórico local."""
         now = datetime.now(tz=timezone.utc).isoformat()
@@ -1410,9 +1416,9 @@ class SQLiteFallback:
         rule_score: int,
         final_score: int,
         status: str,
-        offer_id: Optional[str] = None,
+        offer_id: str | None = None,
         score_breakdown: dict | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Salva o resultado da análise de uma oferta.
 
@@ -1668,7 +1674,7 @@ class SQLiteFallback:
     # system_logs
     # ------------------------------------------------------------------
 
-    async def log_event(self, event_type: str, details: Optional[dict] = None) -> bool:
+    async def log_event(self, event_type: str, details: dict | None = None) -> bool:
         """Registra um evento operacional no banco local."""
         now = datetime.now(tz=timezone.utc).isoformat()
         try:
@@ -1688,7 +1694,7 @@ class SQLiteFallback:
             raise SQLiteError(str(exc), operation="log_event") from exc
 
     async def get_recent_logs(
-        self, event_type: Optional[str] = None, limit: int = 100
+        self, event_type: str | None = None, limit: int = 100
     ) -> list[dict]:
         """Retorna os logs mais recentes do banco local."""
         try:
@@ -1718,7 +1724,7 @@ class SQLiteFallback:
     # sync_to_supabase
     # ------------------------------------------------------------------
 
-    async def sync_to_supabase(self, client: SupabaseClient) -> dict:
+    async def sync_to_supabase(self, client: "SupabaseClient") -> dict:
         """
         Sincroniza registros locais (synced=0) com o Supabase.
 
@@ -1747,7 +1753,7 @@ class SQLiteFallback:
 
     async def _sync_table(
         self,
-        client: SupabaseClient,
+        client: "SupabaseClient",
         table: str,
         conflict_col: str,
         limit: int = 500,
@@ -1760,9 +1766,13 @@ class SQLiteFallback:
         usando os nomes das tabelas de lookup (os UUIDs do SQLite são
         diferentes dos UUIDs do Supabase).
         """
+        if table not in _SYNC_TABLES:
+            raise ValueError(f"Tabela não permitida para sync: {table!r}")
         ok_ids: list[str] = []
         fail_ids: list[str] = []
         try:
+            # SELECT * intencional: função genérica usa row.keys() para construir
+            # o payload de upsert sem precisar conhecer o schema de cada tabela.
             cursor = await self._db.execute(
                 f"SELECT * FROM {table} WHERE synced=0 LIMIT ?",  # noqa: S608
                 (limit,),
@@ -1845,6 +1855,8 @@ class SQLiteFallback:
 
     async def _local_ids_to_names(self, table: str, local_ids: set) -> dict[str, str]:
         """Mapeia UUIDs locais para nomes via consulta SQLite."""
+        if table not in _LOOKUP_TABLES:
+            raise ValueError(f"Tabela não permitida para lookup: {table!r}")
         if not local_ids:
             return {}
         placeholders = ",".join("?" * len(local_ids))
@@ -1868,7 +1880,7 @@ class SQLiteFallback:
 
     async def _resolve_product_fks_for_sync(
         self,
-        client: SupabaseClient,
+        client: "SupabaseClient",
         data_list: list[tuple[str, dict]],
     ) -> None:
         """
@@ -1904,7 +1916,7 @@ class SQLiteFallback:
                 data["category_id"] = None
 
     async def _sync_logs_table(
-        self, client: SupabaseClient, chunk_size: int = 50
+        self, client: "SupabaseClient", chunk_size: int = 50
     ) -> dict:
         """Sincroniza system_logs em batch: deserializa details (TEXT→dict) antes."""
         ok_ids: list[str] = []
@@ -1964,7 +1976,7 @@ class SQLiteFallback:
         affiliate_tag: str,
         email: str | None = None,
         user_id: str | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Retorna o ID do user pela tag. Cria se nao existir."""
         try:
             cursor = await self._db.execute(
@@ -1985,7 +1997,7 @@ class SQLiteFallback:
         except Exception as exc:
             raise SQLiteError(str(exc), operation="get_or_create_user") from exc
 
-    async def get_user_by_tag(self, affiliate_tag: str) -> Optional[dict]:
+    async def get_user_by_tag(self, affiliate_tag: str) -> dict | None:
         """Retorna o user completo pela tag."""
         try:
             cursor = await self._db.execute(
@@ -2011,7 +2023,7 @@ class SQLiteFallback:
 
     async def get_affiliate_link(
         self, product_id: str, user_id: str
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Retorna o affiliate link para um produto+user, ou None."""
         try:
             cursor = await self._db.execute(
@@ -2041,7 +2053,7 @@ class SQLiteFallback:
         short_url: str,
         long_url: str = "",
         ml_link_id: str = "",
-    ) -> Optional[str]:
+    ) -> str | None:
         """Salva um affiliate link (upsert por product_id+user_id)."""
         try:
             link_id = str(uuid.uuid4())
@@ -2218,6 +2230,8 @@ class SQLiteFallback:
         ]
         counts: dict[str, int] = {}
         for table in tables:
+            if table not in _SYNC_TABLES:
+                continue
             try:
                 sql = f"SELECT COUNT(*) FROM {table} WHERE synced=0"  # noqa: S608
                 cursor = await self._db.execute(sql)

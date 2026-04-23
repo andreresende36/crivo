@@ -20,9 +20,8 @@ Uso:
         ...
 """
 
-from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 import structlog
 
@@ -72,7 +71,7 @@ class StorageManager:
     # Ciclo de vida
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> StorageManager:
+    async def __aenter__(self) -> Self:
         await self._connect()
         return self
 
