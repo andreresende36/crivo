@@ -1,26 +1,15 @@
-[project]
-name = "crivo"
-version = "0.1.0"
-description = "Crivo — Scraping, análise e publicação de ofertas"
-requires-python = ">=3.10"
+[tool.uv.workspace]
+members = ["packages/backend", "packages/py-types"]
 
-[build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.backends._legacy:_Backend"
+[tool.uv.sources]
+crivo-types = { workspace = true }
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
-
-[tool.pyright]
-pythonVersion = "3.11"
-venvPath = "."
-venv = ".venv"
-extraPaths = ["."]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_functions = ["test_*"]
-addopts = "--tb=short"
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.14",
+    "respx>=0.21",
+]
