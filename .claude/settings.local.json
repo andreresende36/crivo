@@ -114,7 +114,14 @@
       "mcp__supabase-crivo__list_tables",
       "Bash(chmod +x /Users/andreresende/Apps/crivo/scripts/codegen.sh)",
       "Bash(rtk uv *)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(rtk diff *)",
+      "Bash(grep -E \"^src$|^tests$|^admin$\")",
+      "Bash(supabase --version)",
+      "Bash(SUPABASE_PROJECT_ID=uulvmchnqbjnxaozapsk bash scripts/codegen.sh)",
+      "mcp__supabase-crivo__execute_sql",
+      "Bash(pnpm codegen *)",
+      "Bash(rtk docker *)"
     ]
   },
   "enableAllProjectMcpServers": true,
