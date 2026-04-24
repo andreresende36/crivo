@@ -621,7 +621,7 @@ class TestRetryAndErrors:
     @pytest.mark.asyncio
     async def test_goto_failure_stops_page(self):
         """Falha no _goto deve parar a iteração sem crashar."""
-        scraper = MLScraper()
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE])
 
         mock_page = AsyncMock()
         mock_page.close = AsyncMock()
@@ -644,7 +644,7 @@ class TestRetryAndErrors:
     @pytest.mark.asyncio
     async def test_no_cards_stops_page(self):
         """Timeout ao esperar cards deve parar a iteração."""
-        scraper = MLScraper()
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE])
 
         mock_page = AsyncMock()
         mock_page.wait_for_selector = AsyncMock(
@@ -677,7 +677,7 @@ class TestScrapeIntegration:
     @pytest.mark.asyncio
     async def test_full_scrape_single_page(self, html_poly_cards):
         """Testa o fluxo completo: navegar → parsear → retornar produtos."""
-        scraper = MLScraper()
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE])
 
         mock_page = AsyncMock()
         mock_page.content = AsyncMock(return_value=html_poly_cards)
@@ -712,7 +712,7 @@ class TestScrapeIntegration:
     @pytest.mark.asyncio
     async def test_multi_page_scrape(self, html_poly_cards, html_no_products):
         """Testa navegação multi-página: para quando não há mais produtos."""
-        scraper = MLScraper()
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE])
 
         mock_page = AsyncMock()
         # Página 1: tem produtos; Página 2: vazia (para)
