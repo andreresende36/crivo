@@ -126,6 +126,29 @@ class ScrapedProduct:
         if self.original_price and self.original_price > effective_price:
             self.discount_pct = round((1 - effective_price / self.original_price) * 100, 1)
 
+    def to_product(self) -> "crivo_types.Product":
+        """Converte para crivo_types.Product (validação Pydantic antes de gravar no banco)."""
+        from decimal import Decimal
+
+        import crivo_types
+
+        return crivo_types.Product(
+            id="",  # gerado pelo banco
+            ml_id=self.ml_id,
+            title=self.title,
+            current_price=Decimal(str(self.price)),
+            original_price=Decimal(str(self.original_price)) if self.original_price else None,
+            discount_percent=Decimal(str(self.discount_pct)) if self.discount_pct else None,
+            rating_stars=Decimal(str(self.rating)) if self.rating else None,
+            rating_count=self.review_count or None,
+            image_url=self.image_url or None,
+            affiliate_url=self.url,
+            free_shipping=self.free_shipping,
+            installments_without_interest=self.installments_without_interest,
+            installment_count=self.installment_count,
+            gender=self.gender,
+        )
+
     def to_dict(self) -> dict:
         """Serializa para dicionário (útil para salvar no banco)."""
         return {

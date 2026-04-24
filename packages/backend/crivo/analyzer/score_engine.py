@@ -29,6 +29,7 @@ import structlog
 from crivo.config import settings, ScoreConfig
 from crivo.scraper.base_scraper import ScrapedProduct
 from crivo.utils.brands import KNOWN_BRANDS_LOWER
+from crivo_types import ScoreBreakdown as ScoreBreakdownModel
 
 logger = structlog.get_logger(__name__)
 
@@ -103,10 +104,12 @@ class ScoredProduct:
         d.update(
             {
                 "score": self.score,
-                "score_breakdown": {
-                    f.name: getattr(self.breakdown, f.name).final_score
-                    for f in dc_fields(self.breakdown)
-                },
+                "score_breakdown": ScoreBreakdownModel(
+                    **{
+                        f.name: getattr(self.breakdown, f.name).final_score
+                        for f in dc_fields(self.breakdown)
+                    }
+                ).model_dump(),
                 "passed": self.passed,
                 "reject_reason": self.reject_reason.value if self.reject_reason else None,
                 "low_confidence": self.low_confidence,

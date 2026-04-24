@@ -14,6 +14,7 @@
     ".claude/mcp-servers/*"
   ],
   "scripts": {
+    "postinstall": "bash scripts/install-hooks.sh",
     "codegen": "bash scripts/codegen.sh",
     "build": "pnpm --filter '@crivo/types' build && pnpm --filter '@crivo/admin' build",
     "dev": "pnpm --filter '@crivo/admin' dev",
