@@ -1,1 +1,0 @@
-"""Crivo — Image Enhancement Module."""
