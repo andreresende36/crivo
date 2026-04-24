@@ -1,11 +1,11 @@
 import json
 import re
-from pathlib import Path
+
 
 import httpx
 import structlog
 
-from crivo.config import settings
+from crivo.config import settings, ROOT_DIR
 from crivo.utils.prompts_loader import load_prompt
 
 _CLASSIFIER_USER_TEMPLATE = load_prompt("classifier_user")
@@ -14,7 +14,7 @@ _GENDER_USER_TEMPLATE = load_prompt("gender_user")
 logger = structlog.get_logger(__name__)
 
 # Base path to the categories JSON
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = ROOT_DIR / "data"
 CATEGORIES_FILE = DATA_DIR / "ml_main_categories_all_items.json"
 
 # Keyword mapping to assign categories based on product title

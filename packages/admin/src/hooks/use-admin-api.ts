@@ -128,6 +128,6 @@ export function useAdminApi() {
 
     getFunnel: (hours = 24) =>
       fetchWithAuth(`/api/admin/analytics/funnel?hours=${hours}`),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }), [fetchWithAuth]);
 }

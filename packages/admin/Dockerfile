@@ -8,9 +8,11 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # --- Dependencies ---
 FROM base AS deps
+RUN apk add --no-cache bash
 WORKDIR /app
 # Copy workspace manifests (root + packages needed by admin)
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY scripts/install-hooks.sh ./scripts/
 COPY packages/admin/package.json ./packages/admin/
 COPY packages/types-ts/package.json ./packages/types-ts/
 RUN pnpm install --frozen-lockfile --filter "@crivo/admin..." --filter "@crivo/types"

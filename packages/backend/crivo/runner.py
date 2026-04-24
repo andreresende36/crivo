@@ -30,7 +30,11 @@ from crivo.scraper.pipeline import run_pipeline
 from crivo.distributor.sender import send_next_offer
 from crivo.monitoring.alert_bot import AlertBot
 from crivo.monitoring.health_check import HealthCheck
-from crivo.monitoring.state import set_next_scrape_time, set_next_send_time, set_is_sending_hours
+from crivo.monitoring.state import (
+    set_next_scrape_time,
+    set_next_send_time,
+    set_is_sending_hours,
+)
 import uvicorn
 
 setup_logging()
@@ -43,22 +47,22 @@ logger = structlog.get_logger(__name__)
 
 # Peso de cada janela de horário (proporção do volume diário)
 TIME_WINDOWS: list[tuple[int, int, float]] = [
-    (8, 10, 0.28),    # 28% do volume
-    (10, 13, 0.14),   # 14%
-    (13, 16, 0.30),   # 30%
-    (16, 18, 0.13),   # 13%
-    (18, 23, 0.15),   # 15%
+    (8, 10, 0.28),  # 28% do volume
+    (10, 13, 0.14),  # 14%
+    (13, 16, 0.30),  # 30%
+    (16, 18, 0.13),  # 13%
+    (18, 23, 0.15),  # 15%
 ]
 
 # Multiplicadores por dia da semana (0=Monday ... 6=Sunday)
 DAY_MULTIPLIERS: dict[int, float] = {
-    0: 1.0,     # Segunda
-    1: 0.85,    # Terça (-15%)
-    2: 1.0,     # Quarta
-    3: 1.0,     # Quinta
-    4: 1.20,    # Sexta (+20%)
-    5: 1.0,     # Sábado
-    6: 1.0,     # Domingo
+    0: 1.0,  # Segunda
+    1: 0.85,  # Terça (-15%)
+    2: 1.0,  # Quarta
+    3: 1.0,  # Quinta
+    4: 1.20,  # Sexta (+20%)
+    5: 1.0,  # Sábado
+    6: 1.0,  # Domingo
 }
 
 
@@ -211,7 +215,7 @@ async def sender_loop(
 async def api_loop(shutdown: asyncio.Event) -> None:
     """Roda a API web usando Uvicorn."""
     config = uvicorn.Config(
-        "src.api.monitor:app", host="0.0.0.0", port=8000, log_level="warning"
+        "crivo.api.monitor:app", host="0.0.0.0", port=8000, log_level="warning"
     )
     server = uvicorn.Server(config)
 

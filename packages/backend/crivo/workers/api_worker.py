@@ -4,7 +4,7 @@ Entry point isolado para o container `api`.
 Serve FastAPI/Uvicorn na porta 8000. Lê estado do Redis via /api/state.
 
 Uso:
-  python -m src.workers.api_worker
+  python -m crivo.workers.api_worker
 """
 
 import asyncio

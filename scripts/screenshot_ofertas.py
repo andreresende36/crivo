@@ -11,27 +11,35 @@ Saída:
 """
 
 from __future__ import annotations
+import sys
+from pathlib import Path
+
+# Garante que os pacotes crivo e crivo_types sejam encontrados
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR / "packages" / "backend"))
+sys.path.insert(0, str(ROOT_DIR / "packages" / "py-types"))
+
+from crivo.scraper.base_scraper import BASE_HEADERS  # noqa: E402
+from crivo.scraper.ml_scraper import (
+    OFERTAS_URL,
+    SELECTORS,
+    MLScraper,
+    ScrapeSource,
+)  # noqa: E402
+
 
 import asyncio
 import html as html_module
 import json
 import random
-import sys
 from datetime import datetime
-from pathlib import Path
 from typing import TypedDict
 from urllib.parse import parse_qs, urlparse
-
-# Garante que o pacote src seja encontrado quando executado da raiz do projeto
-ROOT_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT_DIR))
 
 import structlog  # noqa: E402
 from bs4 import BeautifulSoup  # noqa: E402
 from playwright.async_api import Page  # noqa: E402
 
-from src.scraper.base_scraper import BASE_HEADERS  # noqa: E402
-from src.scraper.ml_scraper import OFERTAS_URL, SELECTORS, MLScraper, ScrapeSource  # noqa: E402
 
 logger = structlog.get_logger(__name__)
 
@@ -49,8 +57,8 @@ class CardData(TypedDict):
     page: int
     title: str
     url: str
-    screenshot: bytes   # PNG raw
-    card_html: str      # outer HTML do elemento BeautifulSoup
+    screenshot: bytes  # PNG raw
+    card_html: str  # outer HTML do elemento BeautifulSoup
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +362,9 @@ def _build_card_html(card: CardData, img_src: str) -> str:
     else:
         img_html = '<div class="no-img">screenshot não disponível</div>'
 
-    title_short = (card["title"][:80] + "…") if len(card["title"]) > 80 else card["title"]
+    title_short = (
+        (card["title"][:80] + "…") if len(card["title"]) > 80 else card["title"]
+    )
     card_html_escaped = html_module.escape(card["card_html"])
     ml_id = card["ml_id"]
     url = card["url"]
@@ -471,7 +481,9 @@ def generate_report(cards: list[CardData], run_id: str) -> Path:
         for c in cards
     ]
     json_path = output_dir / "cards.json"
-    json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     logger.info("cards_json_saved", path=str(json_path), count=len(json_data))
 
     return report_path

@@ -6,7 +6,7 @@
       "runtimeExecutable": "python",
       "runtimeArgs": [
         "-m",
-        "src.runner"
+        "crivo.runner"
       ],
       "port": 8000
     },

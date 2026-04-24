@@ -19,7 +19,7 @@ export async function adminFetch<T = unknown>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-
+  
   const res = await fetch(`${FASTAPI_URL}${path}`, {
     ...options,
     headers,

@@ -213,13 +213,13 @@ curl -X POST 'https://<seu-projeto>.supabase.co/auth/v1/admin/users' \
 
 ```bash
 # Runner completo (scraper loop + sender loop + API na porta 8000)
-python -m src.runner
+uv run python -m crivo.runner
 
 # Ou apenas o pipeline de scraping (executa uma vez)
-python -m src.scraper.pipeline
+uv run python -m crivo.scraper.pipeline
 
 # Health check de todos os servicos
-python -m src.monitoring.health_check
+uv run python -m crivo.monitoring.health_check
 
 # Painel Admin
 cd admin

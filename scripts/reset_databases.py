@@ -13,27 +13,37 @@ import asyncio
 import sqlite3
 from pathlib import Path
 
-# Adiciona src/ ao path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Adiciona packages/backend e packages/py-types ao path
+sys.path.insert(0, str(Path(__file__).parent.parent / "packages" / "backend"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "packages" / "py-types"))
 
-from src.config import settings  # noqa: E402
-from src.database.supabase_client import SupabaseClient  # noqa: E402
+from crivo.config import settings  # noqa: E402
+from crivo.database.supabase_client import SupabaseClient  # noqa: E402
 import structlog  # noqa: E402
 
 logger = structlog.get_logger(__name__)
 
 # Tabelas a truncar (ordem respeita FKs — dependentes primeiro)
 TABLES_TO_TRUNCATE = [
-    "sent_offers",      # FK: scored_offer_id
-    "scored_offers",    # FK: product_id
-    "price_history",    # FK: product_id
+    # 1. Tabelas que dependem de outras (Nível 3)
+    "scored_offer_transitions",  # FK: scored_offer_id
+    "sent_offers",  # FK: scored_offer_id
+    "user_secrets",  # FK: user_id
+    # 2. Tabelas intermediárias (Nível 2)
+    "scored_offers",  # FK: product_id
+    "price_history",  # FK: product_id
     "affiliate_links",  # FK: product_id, user_id
-    "products",         # FK: badge_id, category_id, marketplace_id
-    "users",            # sem FKs externas
-    "system_logs",      # sem FKs
-    "badges",           # lookup (products já foi limpa)
-    "categories",       # lookup (products já foi limpa)
-    "marketplaces",     # lookup (products já foi limpa)
+    # 3. Tabelas base com dependências leves (Nível 1)
+    "products",  # FK: badge_id, category_id, marketplace_id, brand_id
+    # 4. Entidades "Raiz" e Lookups (Nível 0)
+    "users",
+    "system_logs",
+    "badges",
+    "categories",
+    "marketplaces",
+    "brands",
+    "title_examples",  # (Opcional)
+    "admin_settings",  # (Opcional)
 ]
 
 
@@ -90,7 +100,9 @@ async def truncate_supabase() -> None:
         for table in TABLES_TO_TRUNCATE:
             try:
                 # Delete sem where = truncate (deleta todas as linhas)
-                await supabase._db.table(table).delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+                await supabase._db.table(table).delete().neq(
+                    "id", "00000000-0000-0000-0000-000000000000"
+                ).execute()
                 logger.info("supabase_table_truncated", table=table)
             except Exception as e:
                 logger.error("supabase_table_delete_failed", table=table, error=str(e))
@@ -103,7 +115,9 @@ async def truncate_supabase() -> None:
         supabase.close()
 
 
-async def _list_all_storage_paths(client: object, bucket: str, folder: str) -> list[str]:
+async def _list_all_storage_paths(
+    client: object, bucket: str, folder: str
+) -> list[str]:
     """Lista recursivamente todos os caminhos de arquivos em uma pasta do Storage."""
     subdirs = await client.storage.from_(bucket).list(folder)
     if not subdirs:
@@ -118,14 +132,14 @@ async def _list_all_storage_paths(client: object, bucket: str, folder: str) -> l
         files = await client.storage.from_(bucket).list(subdir_path)
         if files:
             all_paths.extend(
-                f"{subdir_path}/{f['name']}"
-                for f in files
-                if f.get("name")
+                f"{subdir_path}/{f['name']}" for f in files if f.get("name")
             )
     return all_paths
 
 
-async def clear_supabase_storage(bucket: str = "images", folder: str = "products") -> int:
+async def clear_supabase_storage(
+    bucket: str = "images", folder: str = "products"
+) -> int:
     """
     Apaga todos os arquivos de uma pasta no Supabase Storage.
     Itera recursivamente pelas subpastas (products/{uuid}/enhanced.jpg).
@@ -145,7 +159,7 @@ async def clear_supabase_storage(bucket: str = "images", folder: str = "products
 
         batch_size = 100
         for i in range(0, len(all_paths), batch_size):
-            batch = all_paths[i:i + batch_size]
+            batch = all_paths[i : i + batch_size]
             await client.storage.from_(bucket).remove(batch)
             deleted += len(batch)
             logger.info("storage_batch_deleted", count=len(batch))
@@ -179,7 +193,9 @@ async def main(include_supabase: bool = False, clear_storage: bool = False) -> N
         print("⚠️  Storage: NÃO (imagens serão mantidas)")
 
     print("\n" + "-" * 70)
-    response = (await asyncio.to_thread(input, "Tem certeza? (digite 'SIM' para confirmar): ")).strip()
+    response = (
+        await asyncio.to_thread(input, "Tem certeza? (digite 'SIM' para confirmar): ")
+    ).strip()
 
     if response.upper() != "SIM":
         print("\n❌ Operação cancelada.")
@@ -221,19 +237,17 @@ if __name__ == "__main__":
         description="Reset Crivo databases (truncate mode)"
     )
     parser.add_argument(
-        "--truncate",
-        action="store_true",
-        help="Trunca as tabelas (mantém schema)"
+        "--truncate", action="store_true", help="Trunca as tabelas (mantém schema)"
     )
     parser.add_argument(
         "--include-supabase",
         action="store_true",
-        help="Também trunca Supabase (se configurado)"
+        help="Também trunca Supabase (se configurado)",
     )
     parser.add_argument(
         "--clear-storage",
         action="store_true",
-        help="Apaga todos os arquivos em images/products no Supabase Storage"
+        help="Apaga todos os arquivos em images/products no Supabase Storage",
     )
 
     args = parser.parse_args()
@@ -242,4 +256,6 @@ if __name__ == "__main__":
         print("❌ Use: python scripts/reset_databases.py --truncate")
         sys.exit(1)
 
-    asyncio.run(main(include_supabase=args.include_supabase, clear_storage=args.clear_storage))
+    asyncio.run(
+        main(include_supabase=args.include_supabase, clear_storage=args.clear_storage)
+    )

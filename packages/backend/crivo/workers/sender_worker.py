@@ -5,7 +5,7 @@ Envia ofertas da fila com distribuição temporal Style Guide v3 (8h-23h BRT).
 Escreve next_send_time e is_sending_hours no Redis (quando USE_REDIS_STATE=true).
 
 Uso:
-  python -m src.workers.sender_worker
+  python -m crivo.workers.sender_worker
 """
 
 import asyncio
@@ -40,13 +40,13 @@ TIME_WINDOWS: list[tuple[int, int, float]] = [
 ]
 
 DAY_MULTIPLIERS: dict[int, float] = {
-    0: 1.0,   # Segunda
+    0: 1.0,  # Segunda
     1: 0.85,  # Terça (-15%)
-    2: 1.0,   # Quarta
-    3: 1.0,   # Quinta
+    2: 1.0,  # Quarta
+    3: 1.0,  # Quinta
     4: 1.20,  # Sexta (+20%)
-    5: 1.0,   # Sábado
-    6: 1.0,   # Domingo
+    5: 1.0,  # Sábado
+    6: 1.0,  # Domingo
 }
 
 
@@ -156,9 +156,7 @@ async def _main() -> None:
     alert_bot = AlertBot()
 
     async with StorageManager() as storage:
-        task = asyncio.create_task(
-            sender_loop(storage, shutdown, alert_bot)
-        )
+        task = asyncio.create_task(sender_loop(storage, shutdown, alert_bot))
         await shutdown.wait()
         logger.info("sender_worker_shutting_down")
 

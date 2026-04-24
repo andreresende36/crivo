@@ -5,7 +5,7 @@ Roda o pipeline de scraping a cada SCRAPER_INTERVAL segundos.
 Escreve next_scrape_time no Redis (quando USE_REDIS_STATE=true).
 
 Uso:
-  python -m src.workers.scraper_worker
+  python -m crivo.workers.scraper_worker
 """
 
 import asyncio

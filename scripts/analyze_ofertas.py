@@ -23,13 +23,14 @@ import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(ROOT_DIR / "packages" / "backend"))
+sys.path.insert(0, str(ROOT_DIR / "packages" / "py-types"))
 
 import httpx  # noqa: E402
 import structlog  # noqa: E402
 from bs4 import BeautifulSoup  # noqa: E402
 
-from src.config import settings  # noqa: E402
+from crivo.config import settings  # noqa: E402
 
 logger = structlog.get_logger(__name__)
 
@@ -115,7 +116,8 @@ def find_latest_run() -> Path | None:
         [
             d
             for d in OFERTAS_DIR.iterdir()
-            if d.is_dir() and ((d / "cards.json").exists() or (d / "index.html").exists())
+            if d.is_dir()
+            and ((d / "cards.json").exists() or (d / "index.html").exists())
         ],
         reverse=True,
     )
@@ -157,10 +159,19 @@ def _extract_cards_from_html(html_path: Path) -> list[dict]:
         # HTML do card (estava escaped dentro do <pre>)
         pre = card_div.select_one(f"#html-{ml_id} pre")
         import html as html_module
+
         card_html = html_module.unescape(pre.get_text()) if pre else ""
 
         if card_html:
-            cards.append({"ml_id": ml_id, "page": page, "title": title, "url": url, "card_html": card_html})
+            cards.append(
+                {
+                    "ml_id": ml_id,
+                    "page": page,
+                    "title": title,
+                    "url": url,
+                    "card_html": card_html,
+                }
+            )
 
     print(f"Extraídos {len(cards)} cards do index.html")
     return cards
@@ -177,7 +188,9 @@ def load_cards(run_dir: Path) -> list[dict]:
     if html_path.exists():
         cards = _extract_cards_from_html(html_path)
         # Persiste para uso futuro
-        json_path.write_text(json.dumps(cards, ensure_ascii=False, indent=2), encoding="utf-8")
+        json_path.write_text(
+            json.dumps(cards, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         print(f"cards.json gerado em: {json_path}")
         return cards
 
