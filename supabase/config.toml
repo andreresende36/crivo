@@ -1,0 +1,25 @@
+# Supabase project config — minimal, for CLI tooling (type generation, migrations)
+# Full local dev stack is NOT used; this project connects directly to Supabase cloud.
+
+[project]
+id = "uulvmchnqbjnxaozapsk"
+
+[api]
+enabled = false
+port = 54321
+
+[db]
+port = 54322
+shadow_port = 54320
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[storage]
+enabled = false
+
+[auth]
+enabled = false

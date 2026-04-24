@@ -13,7 +13,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers \
     TZ=America/Sao_Paulo \
-    UV_SYSTEM_PYTHON=1
+    UV_SYSTEM_PYTHON=1 \
+    PATH="/app/.venv/bin:$PATH"
 
 # Dependências de sistema para Playwright/Chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -37,11 +38,11 @@ COPY packages/backend/pyproject.toml ./packages/backend/
 
 # Instala dependências (sem código fonte — layer cacheável)
 RUN uv sync --frozen --no-install-workspace && \
-    playwright install chromium
+    uv run playwright install chromium
 
 # Copia código fonte
-COPY packages/py-types/crivo_types/ ./packages/py-types/crivo_types/
-COPY packages/backend/crivo/ ./packages/backend/crivo/
+COPY packages/py-types/ ./packages/py-types/
+COPY packages/backend/ ./packages/backend/
 COPY prompts/ ./prompts/
 COPY data/ml_categories.json ./
 

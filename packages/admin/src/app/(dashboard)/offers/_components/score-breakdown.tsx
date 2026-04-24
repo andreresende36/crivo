@@ -28,7 +28,7 @@ export function ScoreBreakdownBar({
   breakdown,
   className,
 }: ScoreBreakdownBarProps) {
-  const entries = Object.entries(breakdown).filter(
+  const entries = (Object.entries(breakdown) as [string, number][]).filter(
     ([key]) => key in CRITERIA_CONFIG
   );
   const total = entries.reduce((sum, [, v]) => sum + v, 0);

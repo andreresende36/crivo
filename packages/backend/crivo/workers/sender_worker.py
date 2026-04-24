@@ -140,7 +140,7 @@ async def sender_loop(
         await _interruptible_sleep(delay_minutes * 60, shutdown)
 
 
-async def main() -> None:
+async def _main() -> None:
     shutdown = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -168,5 +168,9 @@ async def main() -> None:
     logger.info("sender_worker_shutdown_complete")
 
 
+def main() -> None:
+    asyncio.run(_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

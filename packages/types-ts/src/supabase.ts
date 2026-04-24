@@ -1,4 +1,3 @@
-// GENERATED — do not edit manually. Run `pnpm codegen` to regenerate.
 export type Json =
   | string
   | number

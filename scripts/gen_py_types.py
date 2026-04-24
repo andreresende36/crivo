@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
 Generates packages/py-types/crivo_types/supabase.py from the live Supabase schema
-via information_schema queries using the Supabase Python client.
+via the Supabase Management API (same endpoint used by the CLI).
 
 Usage: uv run python scripts/gen_py_types.py
-Requires: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars.
+Requires: SUPABASE_PROJECT_ID and SUPABASE_ACCESS_TOKEN env vars.
 """
 import os
 import sys
-import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -67,40 +66,46 @@ TABLE_CLASS_NAMES: dict[str, str] = {
 }
 
 
+_SCHEMA_SQL = """
+SELECT
+    t.table_name,
+    c.column_name,
+    c.data_type,
+    c.is_nullable,
+    c.column_default
+FROM information_schema.tables t
+JOIN information_schema.columns c
+    ON c.table_name = t.table_name AND c.table_schema = t.table_schema
+WHERE t.table_schema = 'public'
+    AND t.table_type = 'BASE TABLE'
+ORDER BY t.table_name, c.ordinal_position
+"""
+
+
 def fetch_schema() -> list[dict]:
     try:
-        from supabase import create_client
+        import httpx
     except ImportError:
-        print("ERROR: supabase package not installed. Run: uv add supabase", file=sys.stderr)
+        print("ERROR: httpx not installed. Run: uv add httpx", file=sys.stderr)
         sys.exit(1)
 
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        print("ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set", file=sys.stderr)
+    project_id = os.environ.get("SUPABASE_PROJECT_ID")
+    access_token = os.environ.get("SUPABASE_ACCESS_TOKEN")
+    if not project_id or not access_token:
+        print("ERROR: SUPABASE_PROJECT_ID and SUPABASE_ACCESS_TOKEN must be set", file=sys.stderr)
         sys.exit(1)
 
-    client = create_client(url, key)
-    result = client.rpc(
-        "json_agg",
-        {
-            "expression": """
-                SELECT
-                    t.table_name,
-                    c.column_name,
-                    c.data_type,
-                    c.is_nullable,
-                    c.column_default
-                FROM information_schema.tables t
-                JOIN information_schema.columns c
-                    ON c.table_name = t.table_name AND c.table_schema = t.table_schema
-                WHERE t.table_schema = 'public'
-                    AND t.table_type = 'BASE TABLE'
-                ORDER BY t.table_name, c.ordinal_position
-            """
-        }
-    ).execute()
-    return result.data
+    resp = httpx.post(
+        f"https://api.supabase.com/v1/projects/{project_id}/database/query",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        json={"query": _SCHEMA_SQL},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 def pg_to_py(data_type: str) -> str:

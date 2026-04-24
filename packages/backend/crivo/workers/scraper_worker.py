@@ -61,7 +61,7 @@ async def scraper_loop(
         await _interruptible_sleep(interval, shutdown)
 
 
-async def main() -> None:
+async def _main() -> None:
     shutdown = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -95,5 +95,9 @@ async def main() -> None:
     logger.info("scraper_worker_shutdown_complete")
 
 
+def main() -> None:
+    asyncio.run(_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

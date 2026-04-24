@@ -19,7 +19,7 @@ setup_logging()
 logger = structlog.get_logger(__name__)
 
 
-async def main() -> None:
+async def _main() -> None:
     shutdown = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -28,7 +28,7 @@ async def main() -> None:
     logger.info("api_worker_starting", port=8000)
 
     config = uvicorn.Config(
-        "src.api.monitor:app",
+        "crivo.api.monitor:app",
         host="0.0.0.0",
         port=8000,
         log_level="warning",
@@ -45,5 +45,9 @@ async def main() -> None:
     logger.info("api_worker_shutdown_complete")
 
 
+def main() -> None:
+    asyncio.run(_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
