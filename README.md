@@ -137,9 +137,12 @@ crivo/
 ### 1. Pre-requisitos
 
 - Python 3.11+
-- Node.js 18+ (para o painel admin)
+- Node.js 22+ (para o painel admin)
+- [`uv`](https://docs.astral.sh/uv/) (gerencia workspace Python) — `brew install uv`
+- [`pnpm`](https://pnpm.io/) 10+ (gerencia workspace TS) — `brew install pnpm` ou `corepack enable`
 - Docker + Docker Compose (recomendado para produção)
 - Conta no [Supabase](https://supabase.com) (gratuita)
+- [`supabase` CLI](https://supabase.com/docs/guides/cli) (para codegen de tipos) — `brew install supabase/tap/supabase`
 - Bot no Telegram (via [@BotFather](https://t.me/BotFather))
 - Chave do [OpenRouter](https://openrouter.ai) (classificação de categoria + geração de títulos + imagens)
 
@@ -149,17 +152,16 @@ crivo/
 git clone <repo-url>
 cd crivo
 
-# Backend Python
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-playwright install chromium
+# Backend Python (uv workspace)
+uv sync                       # cria .venv na raiz com packages/backend + packages/py-types
+uv run playwright install chromium
 
-# Painel Admin (Next.js)
-cd admin
-npm install
-cd ..
+# Painel Admin + pacotes TS (pnpm workspace)
+pnpm install                  # instala @crivo/admin + @crivo/types + instala git hooks
+pnpm --filter "@crivo/types" build
 ```
+
+**Monorepo:** `packages/backend` (Python), `packages/admin` (Next.js), `packages/types-ts` (`@crivo/types`), `packages/py-types` (`crivo-types`). Tipos TS e Pydantic são gerados do schema Supabase — ver `pnpm codegen`.
 
 ### 3. Configurar ambiente
 

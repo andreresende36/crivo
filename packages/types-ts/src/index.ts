@@ -7,8 +7,16 @@ export {
   ProductVariationSchema,
   ProductVariationsSchema,
   MlCookieSchema,
+  SystemLogDetailsSchema,
+  AdminSettingValueSchema,
 } from "./score-breakdown.js"
-export type { ScoreBreakdown, ProductVariation, MlCookie } from "./score-breakdown.js"
+export type {
+  ScoreBreakdown,
+  ProductVariation,
+  MlCookie,
+  SystemLogDetails,
+  AdminSettingValue,
+} from "./score-breakdown.js"
 import type { ScoreBreakdown } from "./score-breakdown.js"
 
 /** Convenience row aliases */

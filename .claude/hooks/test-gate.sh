@@ -110,8 +110,13 @@ fi
 if [[ -z "$TEST_CMD" ]]; then
   if [[ -f "$PYPROJECT" ]]; then
     if grep -q "pytest" "$PYPROJECT" 2> /dev/null; then
-      TEST_CMD="python -m pytest -v --tb=short"
-      TEST_FRAMEWORK="pytest"
+      if command -v uv &> /dev/null && [[ -f "$PROJECT_ROOT/uv.lock" ]]; then
+        TEST_CMD="uv run --env-file .env pytest -v --tb=short"
+        TEST_FRAMEWORK="pytest"
+      else
+        TEST_CMD="python -m pytest -v --tb=short"
+        TEST_FRAMEWORK="pytest"
+      fi
     fi
   elif [[ -f "$SETUP_PY" ]] || find "$PROJECT_ROOT" -maxdepth 3 -name "test_*.py" -o -name "*_test.py" | grep -q . 2> /dev/null; then
     if command -v pytest &> /dev/null; then

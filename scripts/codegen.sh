@@ -28,6 +28,13 @@ if [[ -z "${SUPABASE_ACCESS_TOKEN:-}" ]]; then
   exit 1
 fi
 
+# Optional: push pending migrations first (enable via CODEGEN_DB_PUSH=1)
+if [[ "${CODEGEN_DB_PUSH:-0}" == "1" ]]; then
+  echo "▶ Pushing pending migrations (CODEGEN_DB_PUSH=1)..."
+  supabase db push --linked
+  echo "  ✓ migrations pushed"
+fi
+
 echo "▶ Generating TypeScript types..."
 supabase gen types typescript \
   --project-id "$SUPABASE_PROJECT_ID" \
