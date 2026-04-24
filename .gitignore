@@ -106,3 +106,4 @@ reference/
 .claude/read_files_cache_*.txt
 .claude/session_started_*
 .claude/pr_draft.md
+supabase/.temp/
