@@ -1,6 +1,6 @@
 # PR Description (Auto-generated)
 
-> Generated at: 2026-04-23 16:22:09
+> Generated at: 2026-04-24 13:18:05
 > Branch: `main` → `main`
 > ⚠️  Note: Based on unstaged changes (nothing staged yet)
 
@@ -20,28 +20,9 @@ chore: <!-- describe what changed -->
 0 files)
 
 ```
- .claude/settings.local.json                        |  17 +-
- .gitignore                                         | 119 ++++++++++----
- .../offers/_components/offer-edit-modal.tsx        |   6 +-
- .../offers/_components/offer-preview-card.tsx      |   6 +-
- admin/src/app/login/page.tsx                       | 173 +++++++++++++--------
- admin/src/components/layout/mobile-nav.tsx         |   3 +-
- admin/src/components/layout/sidebar.tsx            |   5 +-
- pyproject.toml                                     |   7 +
- src/analyzer/card_debugger.py                      |   1 -
- src/api/admin.py                                   |   3 +-
- src/database/title_examples.py                     |   1 -
- src/distributor/affiliate_links.py                 |   1 -
- src/distributor/message_validator.py               |   1 -
- src/distributor/sender.py                          |   1 -
- src/distributor/suggestion_generator.py            |   1 -
- src/distributor/title_generator.py                 |   1 -
- src/image/image_storage.py                         |   1 -
- src/image/lifestyle_generator.py                   |   1 -
- src/scraper/ml_scraper.py                          |   1 -
- src/scraper/pipeline.py                            |   4 +-
- src/utils/openrouter.py                            |   1 -
- 21 files changed, 241 insertions(+), 113 deletions(-)
+ .claude/pr_draft.md         | 35 +++++++++++------------------------
+ .claude/settings.local.json |  6 +++++-
+ 2 files changed, 16 insertions(+), 25 deletions(-)
 ```
 
 **By file type:**
@@ -57,7 +38,13 @@ chore: <!-- describe what changed -->
 ## Recent Commits
 
 ```
-888435f refactor: conformidade CLAUDE.md — tipos, segurança SQL e TanStack Query
+73cd22d chore: finalize monorepo — remove npm lockfiles, add Dockerfile, wire crivo_types
+db0f78b chore: close plan gaps — zod schemas, conftest, README, test-gate
+9c7159d feat: bridge crivo_types, pre-commit hook, admin vitest skeleton
+f5751ec chore: update Claude local settings with additional approved bash commands and MCP tools
+da38dff chore: remove supabase/.temp from tracking, add to .gitignore
+bfaa882 chore: complete monorepo setup — CI, codegen, Docker validation
+4c01bdf chore: remove src/ e tests/ obsoletos da raiz
 ```
 
 ## Type of Change
