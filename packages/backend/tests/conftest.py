@@ -6,11 +6,20 @@ payloads em testes, conforme plano de migração para monorepo.
 """
 from __future__ import annotations
 
+import os
 from decimal import Decimal
 
 import pytest
 
 import crivo_types
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Garante vars obrigatórias antes da coleta de módulos (evita KeyError em CI)."""
+    os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
+    os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
+    os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
+    os.environ.setdefault("TELEGRAM_BOT_TOKEN", "0:test-token")
 
 
 @pytest.fixture
