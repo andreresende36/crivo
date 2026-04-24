@@ -6,7 +6,7 @@
 
 FROM python:3.11-slim-bookworm
 
-LABEL maintainer="Crivo <[EMAIL_ADDRESS]>"
+LABEL maintainer="Crivo <andreresendepoker@gmail.com>"
 LABEL description="Sistema automatizado de busca de ofertas — Crivo"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

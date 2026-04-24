@@ -24,6 +24,7 @@ from typing import Self
 import structlog
 from supabase import AsyncClient, acreate_client
 
+import crivo_types
 from crivo.config import settings
 from crivo.scraper.base_scraper import ScrapedProduct
 from .exceptions import SupabaseError
@@ -571,6 +572,22 @@ class SupabaseClient:
             return True
         except Exception as exc:
             raise SupabaseError(str(exc), operation="revert_to_pending") from exc
+
+    async def get_scored_offer_by_id(self, scored_offer_id: str) -> crivo_types.ScoredOffer | None:
+        """Retorna um scored_offer pelo UUID, validado via Pydantic."""
+        try:
+            result = (
+                await self._db.table("scored_offers")
+                .select("*")
+                .eq("id", scored_offer_id)
+                .limit(1)
+                .execute()
+            )
+            if not result.data:
+                return None
+            return crivo_types.ScoredOffer(**result.data[0])
+        except Exception as exc:
+            raise SupabaseError(str(exc), operation="get_scored_offer_by_id") from exc
 
     # ------------------------------------------------------------------
     # sent_offers

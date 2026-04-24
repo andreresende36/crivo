@@ -23,6 +23,7 @@ Uso:
 
 from typing import Any, Self
 
+import crivo_types
 import structlog
 
 from crivo.config import settings
@@ -816,6 +817,15 @@ class StorageManager:
             except SupabaseError:
                 pass
         return await self._sqlite.get_next_unsent_offer()
+
+    async def get_scored_offer_by_id(self, scored_offer_id: str) -> crivo_types.ScoredOffer | None:
+        """Retorna um scored_offer pelo UUID validado via Pydantic (Supabase only)."""
+        if self._using_supabase:
+            try:
+                return await self._supabase.get_scored_offer_by_id(scored_offer_id)
+            except SupabaseError:
+                pass
+        return None
 
     # ------------------------------------------------------------------
     # users
