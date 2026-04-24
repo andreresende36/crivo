@@ -553,7 +553,7 @@ class TestDeduplication:
     @pytest.mark.asyncio
     async def test_no_storage_returns_all(self, html_poly_cards):
         """Sem storage, retorna todos os produtos sem dedup."""
-        scraper = MLScraper()
+        scraper = MLScraper(sources=[_DEFAULT_SOURCE])
 
         mock_page = AsyncMock()
         mock_page.content = AsyncMock(return_value=html_poly_cards)
