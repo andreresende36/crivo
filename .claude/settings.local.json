@@ -125,7 +125,12 @@
       "Bash(pnpm --filter \"@crivo/admin\" add -D vitest @vitejs/plugin-react jsdom @testing-library/react @testing-library/jest-dom)",
       "Bash(pnpm --filter \"@crivo/admin\" test)",
       "Bash(pnpm --filter \"@crivo/admin\" exec tsc --noEmit)",
-      "Bash(.venv/bin/pytest packages/backend/tests -x --tb=short -q)"
+      "Bash(.venv/bin/pytest packages/backend/tests -x --tb=short -q)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d.get\\('mcpServers',{}\\).keys\\(\\)\\)\\)\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(claude mcp *)",
+      "Bash(rtk gh *)"
     ]
   },
   "enableAllProjectMcpServers": true,
