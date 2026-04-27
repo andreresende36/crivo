@@ -10,9 +10,19 @@ Saída:
     debug/ofertas/{run_id}/index.html
 """
 
-from __future__ import annotations
+import asyncio
+import html as html_module
+import json
+import random
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
+from urllib.parse import parse_qs, urlparse
+
+import structlog
+from bs4 import BeautifulSoup
+from playwright.async_api import Page
 
 # Garante que os pacotes crivo e crivo_types sejam encontrados
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -20,25 +30,12 @@ sys.path.insert(0, str(ROOT_DIR / "packages" / "backend"))
 sys.path.insert(0, str(ROOT_DIR / "packages" / "py-types"))
 
 from crivo.scraper.base_scraper import BASE_HEADERS  # noqa: E402
-from crivo.scraper.ml_scraper import (
+from crivo.scraper.ml_scraper import (  # noqa: E402
     OFERTAS_URL,
     SELECTORS,
     MLScraper,
     ScrapeSource,
-)  # noqa: E402
-
-
-import asyncio
-import html as html_module
-import json
-import random
-from datetime import datetime
-from typing import TypedDict
-from urllib.parse import parse_qs, urlparse
-
-import structlog  # noqa: E402
-from bs4 import BeautifulSoup  # noqa: E402
-from playwright.async_api import Page  # noqa: E402
+)
 
 
 logger = structlog.get_logger(__name__)
