@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from supabase import AsyncClient, acreate_client
 
+from crivo.api.schemas import OffersListQuery
 from crivo.config import settings
 from crivo.database.storage_manager import StorageManager
 
@@ -201,35 +202,23 @@ async def bulk_action(
 @router.get("/offers")
 async def list_offers(
     _user: CurrentUser,
-    status: str | None = None,
-    category_id: str | None = None,
-    search: str | None = None,
-    min_price: float | None = None,
-    max_price: float | None = None,
-    min_discount: float | None = None,
-    min_score: int | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    sort_by: str = "score",
-    sort_dir: str = "desc",
-    page: int = 1,
-    page_size: int = 25,
+    query: Annotated[OffersListQuery, Depends()],
 ):
     """Listagem paginada de ofertas com filtros server-side (RPC direto, sem StorageManager)."""
     params = {
-        "p_status": status,
-        "p_category_id": category_id,
-        "p_search": search,
-        "p_min_price": min_price,
-        "p_max_price": max_price,
-        "p_min_discount": min_discount,
-        "p_min_score": min_score,
-        "p_date_from": date_from,
-        "p_date_to": date_to,
-        "p_sort_by": sort_by,
-        "p_sort_dir": sort_dir,
-        "p_page": page,
-        "p_page_size": page_size,
+        "p_status": query.status,
+        "p_category_id": query.category_id,
+        "p_search": query.search,
+        "p_min_price": query.min_price,
+        "p_max_price": query.max_price,
+        "p_min_discount": query.min_discount,
+        "p_min_score": query.min_score,
+        "p_date_from": query.date_from.isoformat() if query.date_from else None,
+        "p_date_to": query.date_to.isoformat() if query.date_to else None,
+        "p_sort_by": query.sort_by,
+        "p_sort_dir": query.sort_dir,
+        "p_page": query.page,
+        "p_page_size": query.page_size,
     }
     try:
         client = await _get_rpc_client()

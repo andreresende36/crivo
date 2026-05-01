@@ -21,7 +21,8 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, TYPE_CHECKING, Self
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Self
 
 import aiosqlite
 import structlog
@@ -1866,7 +1867,7 @@ class SQLiteFallback:
         )
         return {row["id"]: row["name"] for row in await cursor.fetchall()}
 
-    async def _names_to_remote_ids(self, names: set, get_or_create_fn: Any) -> dict[str, str]:
+    async def _names_to_remote_ids(self, names: set[str], get_or_create_fn: Callable[[str], Awaitable[str | None]]) -> dict[str, str]:
         """Resolve nomes para UUIDs do Supabase usando a função fornecida."""
         remote_map: dict[str, str] = {}
         for name in names:

@@ -21,7 +21,8 @@ Uso:
 """
 
 
-from typing import Any, Self
+from collections.abc import Awaitable, Callable
+from typing import Self
 
 import crivo_types
 import structlog
@@ -111,7 +112,7 @@ class StorageManager:
                 # Auto-sync: envia pendentes do SQLite ao Supabase
                 await self._auto_sync()
             else:
-                self._supabase.close()
+                await self._supabase.close()
                 logger.warning(
                     "storage_backend",
                     backend="sqlite",
@@ -205,7 +206,7 @@ class StorageManager:
         """Fecha todas as conexões abertas."""
         await self._sqlite.close()
         if self._using_supabase:
-            self._supabase.close()
+            await self._supabase.close()
 
     # ------------------------------------------------------------------
     # Propriedades de estado
@@ -440,15 +441,15 @@ class StorageManager:
         self,
         products: list[ScrapedProduct],
         attr: str,
-        resolve_fn: Any,
+        resolve_fn: Callable[[str], Awaitable[str | None]],
         require_value: bool = True,
     ) -> dict[str, str | None]:
         """Resolve IDs de lookup (badge/category/marketplace) em batch com cache."""
         cache: dict[str, str | None] = {}
         id_map: dict[str, str | None] = {}
         for p in products:
-            key = getattr(p, attr, None)
-            if require_value and not key:
+            key: str | None = getattr(p, attr, None)
+            if not key:
                 continue
             if key not in cache:
                 cache[key] = await resolve_fn(key)

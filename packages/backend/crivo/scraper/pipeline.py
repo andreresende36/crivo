@@ -8,7 +8,7 @@ O envio ao Telegram é feito pelo sender_loop em runner.py.
 
 import time
 from dataclasses import fields as dc_fields
-from typing import Any
+from typing import TypedDict
 
 import structlog
 
@@ -24,13 +24,40 @@ from crivo.monitoring.alert_bot import AlertBot
 logger = structlog.get_logger(__name__)
 
 
+class _ScoreStats(TypedDict, total=False):
+    score_avg: float
+    score_min: float
+    score_max: float
+
+
+class _PriceStats(TypedDict, total=False):
+    price_min: float
+    price_max: float
+    discount_avg: float
+
+
+class PipelineStats(TypedDict, total=False):
+    scraped: int
+    new: int
+    scored: int
+    approved: int
+    rejected: int
+    saved: int
+    dedup_persisted: int
+    affiliate_links: int
+    errors: int
+    timings: dict[str, float]
+    score_stats: _ScoreStats
+    price_stats: _PriceStats
+
+
 # ---------------------------------------------------------------------------
 # Sub-etapas do pipeline
 # ---------------------------------------------------------------------------
 
 
 async def _run_scraping(
-    storage: StorageManager, stats: dict[str, Any], timings: dict[str, float]
+    storage: StorageManager, stats: PipelineStats, timings: dict[str, float]
 ) -> tuple[list, MLScraper]:
     """Etapa 1: Coleta ofertas via scraper."""
     scraper = MLScraper(storage=storage)
@@ -54,7 +81,7 @@ async def _run_scraping(
 async def _filter_products(
     all_products: list,
     storage: StorageManager,
-    stats: dict[str, Any],
+    stats: PipelineStats,
     timings: dict[str, float],
 ) -> list:
     """Filtro de desconto falso → Dedup 24h (com persistência do dedup path)."""
@@ -113,7 +140,7 @@ async def _filter_products(
 def _score_products(
     genuine_products: list,
     scraper: MLScraper,
-    stats: dict[str, Any],
+    stats: PipelineStats,
     timings: dict[str, float],
 ) -> list:
     """Etapa 4: Avaliação por score + debug report."""
@@ -169,7 +196,7 @@ async def _build_affiliate_links(
     storage: StorageManager,
     ids: dict,
     approved_products: list,
-    stats: dict[str, Any],
+    stats: PipelineStats,
     timings: dict[str, float],
 ) -> None:
     """Etapa 6: Gera links de afiliado via API do ML."""
@@ -199,7 +226,7 @@ async def _build_affiliate_links(
 async def _save_products_fallback(
     storage: StorageManager,
     scored_products: list,
-    stats: dict[str, Any],
+    stats: PipelineStats,
 ) -> None:
     """Fallback: salva individualmente se o batch falhar."""
     for s in scored_products:
@@ -228,7 +255,7 @@ async def _save_products_fallback(
 async def _save_approved(
     storage: StorageManager,
     scored_products: list,
-    stats: dict[str, Any],
+    stats: PipelineStats,
     timings: dict[str, float],
 ) -> list:
     """Etapa 5-6: Salva produtos aprovados no banco + cria affiliate links."""
@@ -286,7 +313,7 @@ async def _save_approved(
 # ---------------------------------------------------------------------------
 
 
-async def run_pipeline(storage: StorageManager) -> dict:
+async def run_pipeline(storage: StorageManager) -> PipelineStats:
     """
     Executa o pipeline de scraping do Crivo.
 
@@ -299,7 +326,7 @@ async def run_pipeline(storage: StorageManager) -> dict:
 
     Retorna dict com estatísticas da execução.
     """
-    stats: dict[str, Any] = {
+    stats: PipelineStats = {
         "scraped": 0,
         "new": 0,
         "scored": 0,
@@ -323,14 +350,14 @@ async def run_pipeline(storage: StorageManager) -> dict:
     scored_products = _score_products(genuine_products, scraper, stats, timings)
     approved_products = await _save_approved(storage, scored_products, stats, timings)
 
-    score_stats: dict[str, Any] = {}
+    score_stats: _ScoreStats = {}
     if scored_products:
         scores = [s.score for s in scored_products]
         score_stats["score_avg"] = round(sum(scores) / len(scores), 1)
         score_stats["score_min"] = round(min(scores), 1)
         score_stats["score_max"] = round(max(scores), 1)
 
-    price_stats: dict[str, Any] = {}
+    price_stats: _PriceStats = {}
     if approved_products:
         prices = [p.price for p in approved_products]
         discounts = [p.discount_pct for p in approved_products if p.discount_pct > 0]
