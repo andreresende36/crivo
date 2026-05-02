@@ -380,20 +380,6 @@ class RedisConfig:
 
 
 # ---------------------------------------------------------------------------
-# SQLite Fallback
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class SQLiteConfig:
-    db_path: Path = field(
-        default_factory=lambda: Path(
-            os.getenv("SQLITE_DB_PATH", str(ROOT_DIR / "data" / "crivo.db"))
-        )
-    )
-
-
-# ---------------------------------------------------------------------------
 # Configuração Global
 # ---------------------------------------------------------------------------
 
@@ -408,7 +394,6 @@ class Settings:
     score: ScoreConfig = field(default_factory=ScoreConfig)
     openrouter: OpenRouterConfig = field(default_factory=OpenRouterConfig)
     sender: SenderConfig = field(default_factory=SenderConfig)
-    sqlite: SQLiteConfig = field(default_factory=SQLiteConfig)
     redis: RedisConfig = field(default_factory=RedisConfig)
     sources: SourcesConfig = field(default_factory=SourcesConfig)
 

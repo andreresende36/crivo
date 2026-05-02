@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """
 Crivo — Reset Databases Script
-Limpa todas as tabelas mantendo o schema intacto.
+Limpa todas as tabelas do Supabase mantendo o schema intacto.
 
 Uso:
     python scripts/reset_databases.py --truncate
-    python scripts/reset_databases.py --truncate --include-supabase
+    python scripts/reset_databases.py --truncate --include-storage
 """
 
 import sys
 import asyncio
-import sqlite3
 from pathlib import Path
 
 # Adiciona packages/backend e packages/py-types ao path
 sys.path.insert(0, str(Path(__file__).parent.parent / "packages" / "backend"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "packages" / "py-types"))
 
-from crivo.config import settings  # noqa: E402
 from crivo.database.supabase_client import SupabaseClient  # noqa: E402
 import structlog  # noqa: E402
 
@@ -45,40 +43,6 @@ TABLES_TO_TRUNCATE = [
     "title_examples",  # (Opcional)
     "admin_settings",  # (Opcional)
 ]
-
-
-def truncate_sqlite() -> None:
-    """Trunca todas as tabelas do SQLite local."""
-    db_path = settings.sqlite.db_path
-
-    if not db_path.exists():
-        logger.warning("sqlite_not_found", path=str(db_path))
-        return
-
-    logger.info("sqlite_truncating", path=str(db_path))
-
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-
-    try:
-        # Desativa FK constraint temporariamente
-        cursor.execute("PRAGMA foreign_keys = OFF")
-
-        for table in TABLES_TO_TRUNCATE:
-            cursor.execute(f"DELETE FROM {table}")
-            count = cursor.rowcount
-            logger.info("table_truncated", table=table, rows_deleted=count)
-
-        conn.commit()
-        logger.info("sqlite_truncate_success")
-
-    except sqlite3.Error as e:
-        logger.error("sqlite_truncate_failed", error=str(e))
-        conn.rollback()
-        raise
-    finally:
-        cursor.execute("PRAGMA foreign_keys = ON")
-        conn.close()
 
 
 async def truncate_supabase() -> None:
@@ -174,23 +138,18 @@ async def clear_supabase_storage(
         supabase.close()
 
 
-async def main(include_supabase: bool = False, clear_storage: bool = False) -> None:
+async def main(truncate: bool = False, clear_storage: bool = False) -> None:
     """Executa o reset."""
     print("\n" + "=" * 70)
-    print("Crivo — Reset Databases (Opção A: Truncate)")
+    print("Crivo — Reset Supabase (Truncate)")
     print("=" * 70)
-    print(f"\n📋 Tabelas a truncar: {', '.join(TABLES_TO_TRUNCATE)}")
-    print("🔒 Schema será PRESERVADO\n")
-
-    if include_supabase:
-        print("⚠️  Supabase: SIM (vai truncar remoto também)")
-    else:
-        print("⚠️  Supabase: NÃO (apenas SQLite local)")
+    print(f"\nTabelas a truncar: {', '.join(TABLES_TO_TRUNCATE)}")
+    print("Schema será PRESERVADO\n")
 
     if clear_storage:
-        print("⚠️  Storage: SIM (vai apagar images/products do Supabase Storage)")
+        print("Storage: SIM (vai apagar images/products do Supabase Storage)")
     else:
-        print("⚠️  Storage: NÃO (imagens serão mantidas)")
+        print("Storage: NAO (imagens serao mantidas)")
 
     print("\n" + "-" * 70)
     response = (
@@ -198,35 +157,27 @@ async def main(include_supabase: bool = False, clear_storage: bool = False) -> N
     ).strip()
 
     if response.upper() != "SIM":
-        print("\n❌ Operação cancelada.")
+        print("\nOperacao cancelada.")
         return
 
-    print("\n🧹 Truncando SQLite local...")
+    print("\nTruncando Supabase...")
     try:
-        truncate_sqlite()
-        print("✅ SQLite truncado com sucesso!\n")
+        await truncate_supabase()
+        print("Supabase truncado com sucesso!\n")
     except Exception as e:
-        print(f"❌ Erro ao truncar SQLite: {e}\n")
+        print(f"Erro ao truncar Supabase: {e}\n")
         sys.exit(1)
 
-    if include_supabase:
-        print("🧹 Truncando Supabase...")
-        try:
-            await truncate_supabase()
-            print("✅ Supabase truncado com sucesso!\n")
-        except Exception as e:
-            print(f"⚠️  Erro ao truncar Supabase (SQLite já foi truncado): {e}\n")
-
     if clear_storage:
-        print("🗑️  Apagando imagens do Supabase Storage (images/products)...")
+        print("Apagando imagens do Supabase Storage (images/products)...")
         try:
             count = await clear_supabase_storage(bucket="images", folder="products")
-            print(f"✅ {count} arquivo(s) deletado(s) do Storage!\n")
+            print(f"{count} arquivo(s) deletado(s) do Storage!\n")
         except Exception as e:
-            print(f"⚠️  Erro ao limpar Storage: {e}\n")
+            print(f"Erro ao limpar Storage: {e}\n")
 
     print("=" * 70)
-    print("✨ Reset concluído! Bancos estão zerados e prontos para novos dados.")
+    print("Reset concluido! Banco zerado e pronto para novos dados.")
     print("=" * 70 + "\n")
 
 
@@ -234,15 +185,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Reset Crivo databases (truncate mode)"
+        description="Reset Supabase (truncate mode)"
     )
     parser.add_argument(
         "--truncate", action="store_true", help="Trunca as tabelas (mantém schema)"
-    )
-    parser.add_argument(
-        "--include-supabase",
-        action="store_true",
-        help="Também trunca Supabase (se configurado)",
     )
     parser.add_argument(
         "--clear-storage",
@@ -253,9 +199,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if not args.truncate:
-        print("❌ Use: python scripts/reset_databases.py --truncate")
+        print("Use: python scripts/reset_databases.py --truncate")
         sys.exit(1)
 
-    asyncio.run(
-        main(include_supabase=args.include_supabase, clear_storage=args.clear_storage)
-    )
+    asyncio.run(main(truncate=args.truncate, clear_storage=args.clear_storage))

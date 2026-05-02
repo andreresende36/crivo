@@ -9,7 +9,7 @@ Uso:
 """
 
 
-import re
+import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,19 +19,17 @@ if TYPE_CHECKING:
     from crivo.database.storage_manager import StorageManager
 
 import structlog
-import asyncio
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from playwright.async_api import Page
 
 from crivo.config import settings
 from .base_scraper import BaseScraper, CaptchaError, RateLimitError, ScrapedProduct
 from .ml_classifier import (
-    get_product_category,
-    classify_with_ai,
-    get_product_gender,
     classify_gender_with_ai,
+    classify_with_ai,
     GENDER_RELEVANT_CATEGORIES,
 )
+from .ml_parser import SELECTORS, ProductParser
 
 logger = structlog.get_logger(__name__)
 
@@ -48,94 +46,9 @@ OFERTAS_URL = "https://www.mercadolivre.com.br/ofertas"
 class ScrapeSource:
     """Configuração de uma fonte de scraping."""
 
-    name: str  # Ex: "ofertas_do_dia"
-    url: str  # URL base da fonte
+    name: str
+    url: str
     max_pages: int = 10
-
-
-# ---------------------------------------------------------------------------
-# Seletores CSS unificados (poly- + ui-search- + fallbacks)
-# ---------------------------------------------------------------------------
-
-SELECTORS = {
-    # Container do card de produto
-    "card": (
-        "div.poly-card, "
-        "li.promotion-item, "
-        "li.ui-search-layout__item, "
-        "div.ui-search-result__wrapper"
-    ),
-    # Título do produto
-    "title": (
-        "a.poly-component__title, "
-        "h2.poly-box.poly-component__title, "
-        "p.promotion-item__title, "
-        "h2.ui-search-item__title, "
-        "span.ui-search-item__title"
-    ),
-    # Link do produto
-    "link": (
-        "a.poly-component__title, a.ui-search-link, a[href*='mercadolivre']"
-    ),
-    # Preço atual — container andes (fraction + cents)
-    "price_current_container": ".poly-price__current",
-    "fraction": ".andes-money-amount__fraction",
-    "cents": ".andes-money-amount__cents",
-    # Preço original (riscado) — poly- e ui-search-
-    "price_original_container": (
-        "s.poly-price__original, "
-        "s.andes-money-amount--previous"
-    ),
-    "price_original_search": (
-        "del.ui-search-price__original-value "
-        "span.andes-money-amount__fraction, "
-        "s span.andes-money-amount__fraction, "
-        "span.ui-search-price__original-value "
-        "span.price-tag-fraction"
-    ),
-    # Desconto explícito
-    "discount": (
-        "span.poly-discount, "
-        ".poly-price__percentage, "
-        "span.andes-money-amount__discount, "
-        "span[class*='discount']"
-    ),
-    # Frete grátis
-    "shipping": (
-        "div.poly-component__shipping, "
-        "p.promotion-item__free-shipping, "
-        "span.ui-search-item__shipping.ui-search-item__shipping--free, "
-        "span[class*='free-shipping']"
-    ),
-    # Imagem / thumbnail
-    "image": (
-        "div.poly-card__portada img, "
-        ".poly-component__picture img, "
-        "img.ui-search-result-image__element, "
-        "img[data-src]"
-    ),
-    # Avaliação e reviews (poly- + ui-search- fallbacks)
-    "rating": ".poly-reviews__rating, span.ui-search-reviews__rating-number",
-    "review_count": ".poly-reviews__total, span.ui-search-reviews__amount",
-    # Parcelamento
-    "installments": ".poly-price__installments",
-    # Badges
-    "badge": "span.poly-component__highlight",
-    # Marca
-    "brand": ".poly-component__brand",
-    # FULL shipping icon
-    "full_shipping_icon": "svg.poly-shipping__promise-icon--full",
-    # Variações disponíveis
-    "variations": ".poly-component__variations-text",
-    # Desconto — variantes específicas
-    "discount_standard": ".poly-price__disc--pill",
-    "discount_pix": ".poly-price__disc_label",
-    # Paginação (link-based)
-    "next_page": (
-        "a.andes-pagination__link--next, li.andes-pagination__button--next a"
-    ),
-    "pagination_links": "a.andes-pagination__link",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +62,6 @@ class MLScraper(BaseScraper):
 
     Coleta ofertas do dia com extração padronizada de todos os campos
     disponíveis nos cards de listagem.
-
-    Campos extraídos de cada card:
-    - ml_id, url, title, price, original_price, discount_pct
-    - rating, review_count, free_shipping, image_url
     """
 
     def __init__(
@@ -163,9 +72,8 @@ class MLScraper(BaseScraper):
         super().__init__()
         self._storage = storage
         self.sources = sources or self._default_sources()
-        # ID único da execução (usado para nomear o diretório de debug)
+        self._parser = ProductParser()
         self.run_id: str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # Screenshots dos cards: {ml_id: bytes_png} — populado se debug_screenshots=True
         self.card_screenshots: dict[str, bytes] = {}
 
     def _default_sources(self) -> list[ScrapeSource]:
@@ -268,7 +176,7 @@ class MLScraper(BaseScraper):
         # Dedup cross-page: mesmo ml_id pode aparecer em várias fontes
         seen: dict[str, ScrapedProduct] = {}
         for p in all_products:
-            seen[p.ml_id] = p  # mantém última ocorrência (dados mais frescos)
+            seen[p.ml_id] = p
         all_products = list(seen.values())
 
         elapsed = round(time.monotonic() - start, 1)
@@ -312,12 +220,7 @@ class MLScraper(BaseScraper):
         url = self._build_url(source, 1)
 
         for page_num in range(1, source.max_pages + 1):
-            logger.info(
-                "scraping_page",
-                source=source.name,
-                page=page_num,
-                url=url,
-            )
+            logger.info("scraping_page", source=source.name, page=page_num, url=url)
 
             success = await self._goto(page, url)
             if not success:
@@ -327,18 +230,13 @@ class MLScraper(BaseScraper):
             if await self._is_blocked(page):
                 raise CaptchaError(f"CAPTCHA detectado em {source.name}")
 
-            # Aguarda os cards carregarem
             try:
                 await page.wait_for_selector(
                     "div.poly-card, li.promotion-item, li.ui-search-layout__item",
                     timeout=15_000,
                 )
             except Exception:
-                logger.warning(
-                    "no_cards_found",
-                    source=source.name,
-                    page=page_num,
-                )
+                logger.warning("no_cards_found", source=source.name, page=page_num)
                 break
 
             await self._human_scroll(page)
@@ -346,7 +244,6 @@ class MLScraper(BaseScraper):
             html = await page.content()
             page_products = self._parse_page(html, source)
 
-            # Debug: screenshot de cada card enquanto a página ainda está aberta
             if settings.scraper.debug_screenshots and page_products:
                 await self._screenshot_cards(page, page_products)
 
@@ -357,7 +254,6 @@ class MLScraper(BaseScraper):
                 raw_count=len(page_products),
             )
 
-            # Verifica quais ml_ids já existem (para pular classificação AI)
             existing_ids: set[str] = set()
             if self._storage:
                 try:
@@ -377,11 +273,9 @@ class MLScraper(BaseScraper):
                     count=len(existing_page),
                 )
 
-            # AI enrichment apenas para produtos NOVOS
             new_page = await self._enrich_categories_with_ai(new_page)
             new_page = await self._enrich_gender(new_page)
 
-            # Retorna TODOS para o pipeline (novos + existentes)
             products.extend(new_page)
             products.extend(existing_page)
             existing_in_db += len(existing_page)
@@ -389,14 +283,9 @@ class MLScraper(BaseScraper):
             if not page_products:
                 break
 
-            # Próxima página
             next_url = await self._resolve_next_page(page, source, page_num)
             if not next_url:
-                logger.info(
-                    "no_more_pages",
-                    source=source.name,
-                    stopped_at=page_num,
-                )
+                logger.info("no_more_pages", source=source.name, stopped_at=page_num)
                 break
 
             url = next_url
@@ -407,10 +296,7 @@ class MLScraper(BaseScraper):
     async def _save_page_products_batch(
         self, page_products: list[ScrapedProduct]
     ) -> tuple[list[ScrapedProduct], int]:
-        """
-        Deduplica e persiste produtos de uma página em batch.
-        Retorna (new_products, dupes_skipped).
-        """
+        """Deduplica e persiste produtos de uma página em batch."""
         if not self._storage or not page_products:
             return page_products, 0
 
@@ -440,6 +326,10 @@ class MLScraper(BaseScraper):
             logger.warning("storage_batch_error", error=str(exc))
             return page_products, 0
 
+    # ------------------------------------------------------------------
+    # AI enrichment
+    # ------------------------------------------------------------------
+
     async def _enrich_categories_with_ai(
         self, products: list[ScrapedProduct]
     ) -> list[ScrapedProduct]:
@@ -452,28 +342,20 @@ class MLScraper(BaseScraper):
 
         async def _classify_and_update(p: ScrapedProduct):
             try:
-                new_cat = await classify_with_ai(p.title)
-                p.category = new_cat
+                p.category = await classify_with_ai(p.title)
             except Exception as e:
                 logger.warning("ai_enrichment_failed", title=p.title, error=str(e))
 
-        # Run classifications concurrently with a small concurrency limit if needed,
-        # but asyncio.gather is fine for a single page (usually ~50 products max)
         await asyncio.gather(*[_classify_and_update(p) for p in outros_products])
-
         logger.info("ai_enrichment_done")
         return products
 
     async def _enrich_gender(
         self, products: list[ScrapedProduct]
     ) -> list[ScrapedProduct]:
-        """
-        Classifica o gênero de produtos em categorias relevantes.
+        """Classifica o gênero de produtos em categorias relevantes."""
+        from crivo.scraper.ml_classifier import get_product_gender
 
-        1. Tenta keyword rápida para todos.
-        2. Produtos incertos (keyword retornou None) → chamada IA em batch.
-        Produtos fora das categorias relevantes ficam com "Sem gênero".
-        """
         needs_ai: list[ScrapedProduct] = []
 
         for p in products:
@@ -496,7 +378,6 @@ class MLScraper(BaseScraper):
                 p.gender = "Unissex"
 
         await asyncio.gather(*[_classify_gender_and_update(p) for p in needs_ai])
-
         logger.info(
             "ai_gender_enrichment_done",
             relevant_categories=list(GENDER_RELEVANT_CATEGORIES),
@@ -504,11 +385,17 @@ class MLScraper(BaseScraper):
         return products
 
     # ------------------------------------------------------------------
+    # Parsing (delegates to ProductParser)
+    # ------------------------------------------------------------------
+
+    def _parse_page(self, html: str, source: ScrapeSource) -> list[ScrapedProduct]:
+        return self._parser.parse_page(html, source)
+
+    # ------------------------------------------------------------------
     # Paginação
     # ------------------------------------------------------------------
 
     def _build_url(self, source: ScrapeSource, _page_num: int) -> str:
-        """Constrói URL para a página solicitada."""
         return source.url
 
     async def _resolve_next_page(
@@ -517,11 +404,9 @@ class MLScraper(BaseScraper):
         _source: ScrapeSource,
         _current_page: int,
     ) -> str | None:
-        """Resolve URL da próxima página via link."""
         return await self._get_next_page_url(page)
 
     async def _get_next_page_url(self, page: Page) -> str | None:
-        """Detecta e retorna a URL da próxima página via link."""
         try:
             for selector in SELECTORS["next_page"].split(", "):
                 el = await page.query_selector(selector)
@@ -530,16 +415,10 @@ class MLScraper(BaseScraper):
                     if href:
                         return self.full_url(href) if href.startswith("/") else href
 
-            # Fallback: procura link com texto "Seguinte"
             links = await page.query_selector_all(SELECTORS["pagination_links"])
             for link in links:
                 text = (await link.inner_text()).strip().lower()
-                if text in (
-                    "seguinte",
-                    "siguiente",
-                    "next",
-                    "próxima",
-                ):
+                if text in ("seguinte", "siguiente", "next", "próxima"):
                     href = await link.get_attribute("href")
                     if href:
                         return self.full_url(href) if href.startswith("/") else href
@@ -556,31 +435,21 @@ class MLScraper(BaseScraper):
     async def _screenshot_cards(
         self, page: Page, products: list[ScrapedProduct]
     ) -> None:
-        """
-        Tira screenshot de cada card de produto enquanto a página ainda está aberta.
-
-        Usa matching por posição DOM: re-parseia o HTML atual para descobrir o
-        índice de cada produto, depois screenshot pelo índice no Playwright.
-        Isso é robusto contra tracking URLs que não contêm o ml_id no href.
-        """
-        from bs4 import BeautifulSoup
-
-        # Re-parseia o HTML atual para construir ml_id → índice DOM
+        """Tira screenshot de cada card enquanto a página está aberta."""
         html = await page.content()
         soup = BeautifulSoup(html, "lxml")
         items = soup.select(SELECTORS["card"])
 
         index_map: dict[str, int] = {}
-        for idx, item in enumerate(items):
+        for enum_idx, item in enumerate(items):
             link_tag = item.select_one(SELECTORS["link"])
             if not link_tag:
                 continue
             raw_url = str(link_tag.get("href", ""))
             mid = self._extract_ml_id(raw_url)
             if mid:
-                index_map[mid] = idx
+                index_map[mid] = enum_idx
 
-        # Obtém todos os card elements do DOM via Playwright (mesma ordem)
         card_locator = page.locator(SELECTORS["card"])
         card_count = await card_locator.count()
 
@@ -588,428 +457,22 @@ class MLScraper(BaseScraper):
         for product in products:
             if product.ml_id in self.card_screenshots:
                 continue
-            idx = index_map.get(product.ml_id)
+            idx: int | None = index_map.get(product.ml_id)
             if idx is None or idx >= card_count:
                 logger.debug("card_index_not_found", ml_id=product.ml_id)
                 continue
             try:
-                screenshot_bytes = await card_locator.nth(idx).screenshot()
-                self.card_screenshots[product.ml_id] = screenshot_bytes
+                self.card_screenshots[product.ml_id] = await card_locator.nth(idx).screenshot()
                 success += 1
             except Exception as exc:
-                logger.debug(
-                    "card_screenshot_failed",
-                    ml_id=product.ml_id,
-                    error=str(exc),
-                )
+                logger.debug("card_screenshot_failed", ml_id=product.ml_id, error=str(exc))
 
-        logger.debug(
-            "cards_screenshotted",
-            success=success,
-            total=len(products),
-        )
+        logger.debug("cards_screenshotted", success=success, total=len(products))
 
     # ------------------------------------------------------------------
-    # Parsing unificado
+    # Regex helpers (kept here for _screenshot_cards + tests on BaseScraper)
     # ------------------------------------------------------------------
 
-    def _parse_page(self, html: str, source: ScrapeSource) -> list[ScrapedProduct]:
-        """Extrai todos os produtos do HTML com seletores unificados."""
-        soup = BeautifulSoup(html, "lxml")
-        products: list[ScrapedProduct] = []
-
-        items = soup.select(SELECTORS["card"])
-        for item in items:
-            product = self._parse_item(item, source)
-            if product:
-                products.append(product)
-
-        return products
-
-    def _resolve_tracking_url(self, url: str) -> str:
-        """Extrai a URL real de tracking URLs do MercadoLivre (mclics/...)."""
-        if "click1.mercadolivre" in url or "/mclics/" in url:
-            from urllib.parse import parse_qs, urlparse, unquote
-
-            parsed = urlparse(url)
-            params = parse_qs(parsed.query)
-            real_url = params.get("url", [None])[0]
-            if real_url:
-                return unquote(real_url)
-        return url
-
-    def _parse_free_shipping(self, item: Tag) -> bool:
-        tag = item.select_one(SELECTORS["shipping"])
-        if tag:
-            text = tag.get_text(strip=True).lower()
-            return "grátis" in text or "gratis" in text
-        # FULL icon sem texto também implica frete grátis
-        if item.select_one(SELECTORS["full_shipping_icon"]):
-            return True
-        return False
-
-    def _parse_full_shipping(self, item: Tag) -> bool:
-        """Detecta se o produto é enviado pelo FULL (fulfillment ML)."""
-        icon = item.select_one(SELECTORS["full_shipping_icon"])
-        return icon is not None
-
-    def _parse_brand(self, item: Tag) -> str | None:
-        """Extrai a marca do card (.poly-component__brand). Retorna None se ausente."""
-        tag = item.select_one(SELECTORS["brand"])
-        return tag.get_text(strip=True) if tag else None
-
-    def _parse_variations(self, item: Tag) -> str | None:
-        """Extrai texto de variações disponíveis (.poly-component__variations-text). Retorna None se ausente."""
-        tag = item.select_one(SELECTORS["variations"])
-        return tag.get_text(strip=True) if tag else None
-
-    def _parse_installments(
-        self, item: Tag
-    ) -> tuple[bool, int | None, float | None]:
-        """Extrai dados completos de parcelamento.
-
-        Retorna (sem_juros, count, value_per_installment).
-
-        Padrões identificados:
-          A: "12x R$ 192,14"                              → (False, 12, 192.14)
-          B: "10x R$ 107,90 sem juros"                    → (True, 10, 107.90)
-          C: "ou R$ 687,78 em 10x R$ 68,78 sem juros"    → (True, 10, 68.78)
-          D: "ou R$ 357,90 em outros meios"               → (False, None, None)
-        """
-        tag = item.select_one(SELECTORS["installments"])
-        if not tag:
-            return False, None, None
-
-        text = tag.get_text(separator=" ", strip=True).lower()
-        sem_juros = "sem juros" in text or "sin interés" in text
-
-        # Padrão D: sem parcelas reais
-        if "em outros meios" in text:
-            return False, None, None
-
-        # Extrair count: procurar NNx
-        count_match = re.search(r"(\d+)\s*x\b", text)
-        if not count_match:
-            return sem_juros, None, None
-
-        count = int(count_match.group(1))
-
-        # Extrair valor da parcela: último andes-money-amount.poly-phrase-price
-        # após o "Nx" (para evitar pegar o preço total no Padrão C)
-        phrase_prices = tag.select("span.andes-money-amount.poly-phrase-price")
-        if phrase_prices:
-            # No Padrão C há 2+ spans: o último é o valor da parcela
-            last_price = phrase_prices[-1]
-            value = self._price_from_andes(last_price)
-            return sem_juros, count, value
-
-        # Fallback: regex no texto
-        # Procurar valores após "Nx" no texto
-        value_match = re.search(
-            r"\d+\s*x\s*(?:r\$\s*)?([\d.]+[,]\d{2})", text
-        )
-        if value_match:
-            value = self._clean_price(value_match.group(1))
-            return sem_juros, count, value
-
-        return sem_juros, count, None
-
-    def _parse_discount(self, item: Tag) -> tuple[float, str | None]:
-        """Extrai percentual e tipo de desconto.
-
-        Retorna (pct, type):
-          - type="standard": desconto padrão (pill, ex: "20% OFF")
-          - type="pix": desconto de meio de pagamento (ex: "22% OFF no Pix")
-          - type="": sem desconto explícito
-        """
-        # 1. Desconto padrão (pill)
-        pill = item.select_one(SELECTORS["discount_standard"])
-        if pill:
-            text = pill.get_text(strip=True)
-            pct = self._parse_discount_pct(text)
-            if pct:
-                return pct, "standard"
-
-        # 2. Desconto Pix/boleto (label inline)
-        pix_label = item.select_one(SELECTORS["discount_pix"])
-        if pix_label:
-            text = pix_label.get_text(strip=True)
-            pct = self._parse_discount_pct(text)
-            if pct:
-                return pct, "pix"
-
-        # 3. Fallback: seletor amplo original
-        discount_tag = item.select_one(SELECTORS["discount"])
-        if discount_tag:
-            text = discount_tag.get_text(strip=True)
-            pct = self._parse_discount_pct(text)
-            if pct:
-                discount_text_lower = text.lower()
-                dtype = "pix" if any(
-                    kw in discount_text_lower for kw in ("pix", "boleto")
-                ) else "standard"
-                return pct, dtype
-
-        return 0.0, None
-
-    def _parse_image_url(self, item: Tag) -> str:
-        img_tag = item.select_one(SELECTORS["image"])
-        if img_tag:
-            return str(img_tag.get("data-src") or img_tag.get("src") or "")
-        return ""
-
-    def _parse_item(self, item: Tag, source: ScrapeSource) -> Optional[ScrapedProduct]:
-        """
-        Extrai TODOS os campos de um card de produto.
-
-        Extração padronizada independente da fonte:
-        ml_id, url, title, price, original_price, discount_pct,
-        rating, review_count, free_shipping, image_url, category.
-        """
-        try:
-            # --- URL e ML ID ---
-            link_tag = item.select_one(SELECTORS["link"])
-            if not link_tag:
-                return None
-            url = str(link_tag.get("href", ""))
-            if not url:
-                return None
-
-            ml_id = self._extract_ml_id(url)
-            if not ml_id:
-                return None
-
-            url = self._resolve_tracking_url(url)
-
-            if url.startswith("/"):
-                url = self.full_url(url)
-
-            # --- Título ---
-            title_tag = item.select_one(SELECTORS["title"])
-            title = title_tag.get_text(strip=True) if title_tag else ""
-            if not title:
-                return None
-
-            # --- Preços (atual + Pix se aplicável) ---
-            price, pix_price = self._get_prices(item)
-            if price is None or price <= 0:
-                return None
-
-            # --- Preço original (riscado) ---
-            original_price = self._get_original_price(item)
-
-            # --- Desconto explícito (com tipo) ---
-            explicit_discount, discount_type = self._parse_discount(item)
-
-            # --- Avaliação ---
-            rating = self._parse_rating(item)
-
-            # --- Reviews ---
-            review_count = self._parse_review_count(item)
-
-            # --- Frete grátis ---
-            free_shipping = self._parse_free_shipping(item)
-
-            # --- FULL shipping ---
-            full_shipping = self._parse_full_shipping(item)
-
-            # --- Parcelamento (completo) ---
-            sem_juros, inst_count, inst_value = self._parse_installments(item)
-
-            # --- Imagem ---
-            image_url = self._parse_image_url(item)
-
-            # --- Badge ---
-            badge_tag = item.select_one(SELECTORS["badge"])
-            badge = badge_tag.get_text(strip=True) if badge_tag else ""
-
-            # --- Marca ---
-            brand = self._parse_brand(item)
-
-            # --- Variações ---
-            variations = self._parse_variations(item)
-
-            # --- Montar produto ---
-            product = ScrapedProduct(
-                ml_id=ml_id,
-                url=url,
-                title=title,
-                price=price,
-                original_price=original_price,
-                pix_price=pix_price,
-                rating=rating,
-                review_count=review_count,
-                category=get_product_category(title),
-                image_url=image_url,
-                free_shipping=free_shipping,
-                full_shipping=full_shipping,
-                installments_without_interest=sem_juros,
-                installment_count=inst_count,
-                installment_value=inst_value,
-                badge=badge,
-                brand=brand,
-                variations=variations,
-                discount_type=discount_type,
-                source=source.name,
-            )
-
-            # Usa desconto explícito se preço original ausente
-            if explicit_discount and not original_price:
-                product.discount_pct = explicit_discount
-
-            return product
-
-        except Exception as exc:
-            logger.debug("parse_item_error", error=str(exc))
-            return None
-
-    # ------------------------------------------------------------------
-    # Extração de preço (robusto: fraction + cents)
-    # ------------------------------------------------------------------
-
-    def _get_prices(self, card: Tag) -> tuple[float | None, float | None]:
-        """Extrai preço do cartão e preço Pix de um card.
-
-        Retorna (card_price, pix_price):
-        - card_price: preço "universal" (cartão/parcelado) — sempre presente
-        - pix_price: preço com desconto Pix/boleto — None se não houver
-
-        Quando o card exibe um preço de meio de pagamento (Pix, boleto),
-        o valor em .poly-price__current é o preço Pix.
-        O preço listado real aparece em .poly-price__installments
-        como "ou R$ X.XXX em Nx ...".
-        """
-        container = card.select_one(SELECTORS["price_current_container"])
-        if container:
-            if self._is_payment_method_price(container):
-                # O preço principal exibido é o Pix
-                pix_price = self._price_from_andes(container)
-                # O preço "real" (cartão) está nas parcelas
-                card_price = self._get_listed_price(card)
-                if card_price and pix_price:
-                    return card_price, pix_price
-                # Fallback: se não encontrou preço de parcela, usa o Pix como preço
-                if pix_price:
-                    return pix_price, None
-
-            # Preço normal (sem desconto de meio de pagamento)
-            price = self._price_from_andes(container)
-            if price:
-                return price, None
-
-        # Fallback: primeiro fraction que NÃO esteja em <s>/<del>
-        for fraction in card.select(SELECTORS["fraction"]):
-            if not fraction.find_parent(["s", "del"]):
-                price = self._clean_price(fraction.get_text(strip=True))
-                return price, None
-
-        return None, None
-
-    def _is_payment_method_price(self, container: Tag) -> bool:
-        """Detecta se .poly-price__current exibe preço de meio de pagamento."""
-        disc_el = container.select_one(
-            ".andes-money-amount__discount, .poly-price__disc_label"
-        )
-        if not disc_el:
-            return False
-        text = disc_el.get_text(strip=True).lower()
-        return any(kw in text for kw in ("pix", "boleto"))
-
-    def _get_listed_price(self, card: Tag) -> float | None:
-        """Extrai o preço listado real da seção de parcelamento.
-
-        Em cards com preço Pix, a estrutura é:
-          .poly-price__installments → "ou R$ 2.478 em 10x R$ 247,83 sem juros"
-        O primeiro andes-money-amount.poly-phrase-price é o preço listado.
-        """
-        installments = card.select_one(SELECTORS["installments"])
-        if not installments:
-            return None
-        amounts = installments.select("span.andes-money-amount.poly-phrase-price")
-        if amounts:
-            return self._price_from_andes(amounts[0])
-        return None
-
-    def _get_original_price(self, card: Tag) -> float | None:
-        """Extrai o preço original (riscado / antes do desconto)."""
-        # Estratégia 1: container com classe conhecida
-        for selector in SELECTORS["price_original_container"].split(", "):
-            container = card.select_one(selector)
-            if container:
-                price = self._price_from_andes(container)
-                if price:
-                    return price
-
-        # Estratégia 2: <s> ou <del> com andes-money-amount (extrai fraction + cents)
-        for tag_name in ("s", "del"):
-            parent = card.select_one(tag_name)
-            if parent:
-                price = self._price_from_andes(parent)
-                if price:
-                    return price
-
-        # Estratégia 3: seletores de busca legados (ui-search-)
-        for selector in SELECTORS["price_original_search"].split(", "):
-            tag = card.select_one(selector)
-            if tag:
-                return self._clean_price(tag.get_text(strip=True))
-
-        return None
-
-    def _price_from_andes(self, container: Tag) -> float | None:
-        """
-        Extrai preço de um container andes-money-amount.
-        Combina fraction (parte inteira) com cents (centavos).
-
-        Exemplos:
-            fraction="1.299", cents=",90" → 1299.90
-            fraction="299", cents=None → 299.0
-        """
-        fraction_el = container.select_one(SELECTORS["fraction"])
-        if not fraction_el:
-            return None
-
-        fraction_text = fraction_el.get_text(strip=True)
-        fraction_clean = fraction_text.replace(".", "")
-
-        try:
-            base = int(fraction_clean)
-        except ValueError:
-            return self._clean_price(fraction_text)
-
-        cents_el = container.select_one(SELECTORS["cents"])
-        if cents_el:
-            cents_text = cents_el.get_text(strip=True).lstrip(",").strip()
-            try:
-                return float(base) + int(cents_text) / 100
-            except ValueError:
-                pass
-
-        return float(base)
-
-    # ------------------------------------------------------------------
-    # Extração padronizada de rating, reviews
-    # ------------------------------------------------------------------
-
-    def _parse_rating(self, item: Tag) -> float:
-        """Extrai avaliação média (0-5 estrelas) do card."""
-        tag = item.select_one(SELECTORS["rating"])
-        if not tag:
-            return 0.0
-        try:
-            text = tag.get_text(strip=True).replace(",", ".")
-            rating = float(text)
-            return rating if 0 <= rating <= 5 else 0.0
-        except (ValueError, TypeError):
-            return 0.0
-
-    def _parse_review_count(self, item: Tag) -> int:
-        """Extrai número de reviews do card."""
-        tag = item.select_one(SELECTORS["review_count"])
-        if not tag:
-            return 0
-        text = re.sub(r"[^\d]", "", tag.get_text())
-        try:
-            return int(text)
-        except (ValueError, TypeError):
-            return 0
+    def _extract_ml_id_re(self, url: str) -> str | None:
+        """Alias local — delega ao BaseScraper._extract_ml_id."""
+        return self._extract_ml_id(url)

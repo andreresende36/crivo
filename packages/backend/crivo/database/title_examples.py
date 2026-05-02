@@ -5,6 +5,7 @@ Dataclasses para o sistema de feedback de títulos.
 
 
 from dataclasses import dataclass
+from typing import Self
 
 
 @dataclass
@@ -41,7 +42,7 @@ class TitleExample:
     action: str
 
     @classmethod
-    def from_dict(cls, data: dict) -> TitleExample:
+    def from_dict(cls, data: dict) -> Self:
         return cls(
             product_title=data["product_title"],
             final_title=data["final_title"],

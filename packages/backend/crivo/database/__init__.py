@@ -1,6 +1,6 @@
 """
 Crivo — Módulo de Banco de Dados
-Supabase (principal) com SQLite como fallback e buffer local.
+Interface Supabase via StorageManager.
 
 Uso típico:
     from crivo.database import StorageManager
@@ -12,15 +12,11 @@ Uso típico:
 
 from .storage_manager import StorageManager
 from .supabase_client import SupabaseClient
-from .sqlite_fallback import SQLiteFallback
-from .exceptions import StorageError, SupabaseError, SQLiteError, SyncError
+from .exceptions import StorageError, SupabaseError
 
 __all__ = [
     "StorageManager",
     "SupabaseClient",
-    "SQLiteFallback",
     "StorageError",
     "SupabaseError",
-    "SQLiteError",
-    "SyncError",
 ]

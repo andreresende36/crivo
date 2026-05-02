@@ -1,24 +1,17 @@
 """
 Testes de integração do Crivo.
 
-Testa o pipeline completo (storage, score, formatação, affiliate links)
-usando SQLite real em memória e mocks para serviços externos.
+Testa o pipeline completo (score, formatação) com mocks para serviços externos.
 """
 
-from pathlib import Path
-from typing import AsyncGenerator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
-import pytest_asyncio
 
 from crivo.scraper.base_scraper import ScrapedProduct
 from crivo.analyzer.score_engine import ScoreEngine
 from crivo.analyzer.fake_discount_detector import FakeDiscountDetector
 from crivo.distributor.message_formatter import MessageFormatter
-from crivo.database.sqlite_fallback import SQLiteFallback
-from crivo.database.storage_manager import StorageManager
-from crivo.database.exceptions import SupabaseError
 
 
 # ---------------------------------------------------------------------------
@@ -71,15 +64,6 @@ def fake_discount_product() -> ScrapedProduct:
         review_count=20,
         source="ofertas_do_dia",
     )
-
-
-@pytest_asyncio.fixture
-async def sqlite_db(tmp_path: Path) -> AsyncGenerator[SQLiteFallback, None]:
-    """SQLite real em arquivo temporário."""
-    db = SQLiteFallback(db_path=tmp_path / "test.db")
-    await db.initialize()
-    yield db
-    await db.close()
 
 
 @pytest.fixture
@@ -154,136 +138,6 @@ class TestScoreToFormatPipeline:
         # O bom produto deve passar
         ml_ids = [s.product.ml_id for s in approved]
         assert good_product.ml_id in ml_ids
-
-
-# ---------------------------------------------------------------------------
-# Teste: SQLite Fallback — ciclo completo
-# ---------------------------------------------------------------------------
-
-
-class TestSQLiteFallbackIntegration:
-    """Testa operações completas no SQLite real."""
-
-    @pytest.mark.asyncio
-    async def test_full_product_lifecycle(
-        self, sqlite_db: SQLiteFallback, good_product
-    ):
-        # 1. Inserir produto
-        product_id = await sqlite_db.upsert_product(good_product)
-        assert product_id is not None
-
-        # 2. Verificar duplicata
-        is_dup = await sqlite_db.check_duplicate(good_product.ml_id)
-        assert is_dup is True
-
-        # 3. Buscar ID
-        found_id = await sqlite_db.get_product_id(good_product.ml_id)
-        assert found_id == product_id
-
-        # 4. Adicionar histórico de preço
-        ok = await sqlite_db.add_price_history(product_id, 299.90, 599.90)
-        assert ok is True
-
-        # 5. Buscar histórico
-        history = await sqlite_db.get_price_history(product_id, days=30)
-        assert len(history) == 1
-        assert history[0]["price"] == pytest.approx(299.90)
-
-        # 6. Salvar scored offer
-        offer_id = await sqlite_db.save_scored_offer(
-            product_id, rule_score=75, final_score=75, status="approved"
-        )
-        assert offer_id is not None
-
-        # 7. Marcar como enviado
-        ok = await sqlite_db.mark_as_sent(offer_id, "telegram")
-        assert ok is True
-
-        # 8. Verificar envio recente
-        was_sent = await sqlite_db.was_recently_sent(good_product.ml_id, hours=1)
-        assert was_sent is True
-
-    @pytest.mark.asyncio
-    async def test_upsert_preserves_first_seen(
-        self, sqlite_db: SQLiteFallback, good_product
-    ):
-        # Inserir
-        product_id = await sqlite_db.upsert_product(good_product)
-        assert product_id is not None
-
-        # Atualizar com preço diferente
-        good_product.price = 249.90
-        updated_id = await sqlite_db.upsert_product(good_product)
-        assert updated_id == product_id  # Mesmo ID
-
-    @pytest.mark.asyncio
-    async def test_log_event(self, sqlite_db: SQLiteFallback):
-        ok = await sqlite_db.log_event("test_event", {"key": "value"})
-        assert ok is True
-
-        logs = await sqlite_db.get_recent_logs("test_event", limit=5)
-        assert len(logs) == 1
-        assert logs[0]["event_type"] == "test_event"
-        assert logs[0]["details"]["key"] == "value"
-
-    @pytest.mark.asyncio
-    async def test_unsynced_count(self, sqlite_db: SQLiteFallback, good_product):
-        await sqlite_db.upsert_product(good_product)
-        counts = await sqlite_db.get_unsynced_count()
-        assert counts["products"] >= 1
-
-
-# ---------------------------------------------------------------------------
-# Teste: StorageManager com fallback
-# ---------------------------------------------------------------------------
-
-
-class TestStorageManagerFallback:
-    """Testa o failover do StorageManager quando Supabase falha."""
-
-    @pytest.mark.asyncio
-    async def test_sqlite_only_mode(self, good_product, tmp_path):
-        with patch("crivo.database.storage_manager.settings") as mock_cfg:
-            mock_cfg.is_production = False
-
-            with patch("crivo.database.sqlite_fallback.settings") as mock_sqlite_cfg:
-                mock_sqlite_cfg.sqlite.db_path = tmp_path / "fallback.db"
-
-                manager = StorageManager(force_sqlite=True)
-                async with manager:
-                    assert manager.backend == "sqlite"
-
-                    product_id = await manager.upsert_product(good_product)
-                    assert product_id is not None
-
-                    is_dup = await manager.check_duplicate(good_product.ml_id)
-                    assert is_dup is True
-
-    @pytest.mark.asyncio
-    async def test_supabase_failure_falls_back_to_sqlite(self, good_product, tmp_path):
-        with patch("crivo.database.storage_manager.settings") as mock_cfg:
-            mock_cfg.is_production = True
-
-            with patch("crivo.database.sqlite_fallback.settings") as mock_sqlite_cfg:
-                mock_sqlite_cfg.sqlite.db_path = tmp_path / "fallback2.db"
-
-                manager = StorageManager(force_sqlite=False)
-                # Simula que Supabase está conectado
-                manager._using_supabase = True
-                await manager._sqlite.initialize()
-
-                # Mocka supabase para falhar
-                manager._supabase.upsert_product = AsyncMock(
-                    side_effect=SupabaseError(
-                        "Connection refused", operation="upsert_product"
-                    )
-                )
-
-                # Deve cair no SQLite sem explodir
-                product_id = await manager.upsert_product(good_product)
-                assert product_id is not None
-
-                await manager._sqlite.close()
 
 
 # ---------------------------------------------------------------------------

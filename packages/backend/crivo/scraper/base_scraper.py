@@ -10,7 +10,10 @@ import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    import crivo_types
 
 import structlog
 from fake_useragent import UserAgent
