@@ -116,13 +116,25 @@ class SupabaseClient:
             )
             if result.data:
                 return result.data[0]["id"]
-            # Não existe, cria
-            result = await self._db.table("badges").insert({"name": name}).execute()
+            # Não existe — upsert com ON CONFLICT DO NOTHING evita race condition
+            result = (
+                await self._db.table("badges")
+                .upsert({"name": name}, on_conflict="name", ignore_duplicates=True)
+                .execute()
+            )
             if result.data:
                 badge_id: str = result.data[0]["id"]
                 logger.debug("supabase_badge_created", name=name, badge_id=badge_id)
                 return badge_id
-            return None
+            # Conflict silenciado — re-fetch
+            fetch = (
+                await self._db.table("badges")
+                .select("id")
+                .eq("name", name)
+                .limit(1)
+                .execute()
+            )
+            return fetch.data[0]["id"] if fetch.data else None
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_or_create_badge") from exc
 
@@ -144,12 +156,23 @@ class SupabaseClient:
             )
             if result.data:
                 return result.data[0]["id"]
-            result = await self._db.table("categories").insert({"name": name}).execute()
+            result = (
+                await self._db.table("categories")
+                .upsert({"name": name}, on_conflict="name", ignore_duplicates=True)
+                .execute()
+            )
             if result.data:
                 cat_id: str = result.data[0]["id"]
                 logger.debug("supabase_category_created", name=name, category_id=cat_id)
                 return cat_id
-            return None
+            fetch = (
+                await self._db.table("categories")
+                .select("id")
+                .eq("name", name)
+                .limit(1)
+                .execute()
+            )
+            return fetch.data[0]["id"] if fetch.data else None
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_or_create_category") from exc
 
@@ -183,12 +206,23 @@ class SupabaseClient:
             )
             if result.data:
                 return result.data[0]["id"]
-            result = await self._db.table("marketplaces").insert({"name": name}).execute()
+            result = (
+                await self._db.table("marketplaces")
+                .upsert({"name": name}, on_conflict="name", ignore_duplicates=True)
+                .execute()
+            )
             if result.data:
                 mp_id: str = result.data[0]["id"]
                 logger.debug("supabase_marketplace_created", name=name, marketplace_id=mp_id)
                 return mp_id
-            return None
+            fetch = (
+                await self._db.table("marketplaces")
+                .select("id")
+                .eq("name", name)
+                .limit(1)
+                .execute()
+            )
+            return fetch.data[0]["id"] if fetch.data else None
         except Exception as exc:
             raise SupabaseError(str(exc), operation="get_or_create_marketplace") from exc
 
