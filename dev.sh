@@ -1,66 +1,94 @@
 #!/usr/bin/env bash
-set -e
+# =============================================================================
+# dev.sh — Crivo: setup + 4 workers em terminais separados (macOS)
+# Uso: ./dev.sh
+# =============================================================================
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-VENV="$ROOT/.venv"
-LOG_DIR="$ROOT/logs"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-mkdir -p "$LOG_DIR"
+log()  { echo -e "${GREEN}▶${NC} $1"; }
+warn() { echo -e "${YELLOW}⚠${NC}  $1"; }
+err()  { echo -e "${RED}✗${NC}  $1"; exit 1; }
 
-if ! command -v uv &> /dev/null; then
-  echo -e "${RED}[erro]${NC} uv não encontrado. Rode:"
-  echo -e "  brew install uv"
+# ---------------------------------------------------------------------------
+# Pré-requisitos
+# ---------------------------------------------------------------------------
+
+command -v uv   &>/dev/null || err "uv não encontrado. Instale: brew install uv"
+command -v pnpm &>/dev/null || err "pnpm não encontrado. Instale: brew install pnpm"
+
+# ---------------------------------------------------------------------------
+# .env
+# ---------------------------------------------------------------------------
+
+if [ ! -f "$ROOT/.env" ]; then
+  warn ".env não encontrado. Copiando de .env.example..."
+  cp "$ROOT/.env.example" "$ROOT/.env"
+  warn "Configure as credenciais em .env antes de continuar."
   exit 1
 fi
 
-if ! command -v pnpm &> /dev/null; then
-  echo -e "${RED}[erro]${NC} pnpm não encontrado. Rode:"
-  echo -e "  npm install -g pnpm"
+if [ ! -f "$ROOT/packages/admin/.env.local" ]; then
+  warn "packages/admin/.env.local não encontrado. Copiando do exemplo..."
+  cp "$ROOT/packages/admin/.env.local.example" "$ROOT/packages/admin/.env.local"
+  warn "Configure as credenciais em packages/admin/.env.local antes de continuar."
   exit 1
 fi
 
-if [[ ! -d "$ROOT/node_modules" ]]; then
-  echo -e "${YELLOW}[info]${NC} Instalando dependências..."
-  (cd "$ROOT" && pnpm install)
-fi
+# ---------------------------------------------------------------------------
+# Dependências Python
+# ---------------------------------------------------------------------------
 
-# Cleanup ao pressionar Ctrl+C
-cleanup() {
-  echo -e "\n${YELLOW}[info]${NC} Encerrando serviços..."
-  kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null
-  wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null
-  kill "$TAIL_PID" 2>/dev/null
-  echo -e "${GREEN}[ok]${NC} Serviços encerrados."
-  return 0
+log "Sincronizando backend Python (uv sync)..."
+uv sync --quiet
+
+log "Instalando Playwright Chromium..."
+uv run playwright install chromium --quiet 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Dependências Node
+# ---------------------------------------------------------------------------
+
+log "Instalando dependências Node (pnpm install)..."
+pnpm install --silent
+
+log "Build dos tipos TS (@crivo/types)..."
+pnpm --filter "@crivo/types" build --silent 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Abre cada serviço em um terminal separado (macOS Terminal.app)
+# ---------------------------------------------------------------------------
+
+open_terminal() {
+  local title="$1"
+  local cmd="$2"
+  osascript <<APPLESCRIPT
+tell application "Terminal"
+  activate
+  set w to do script "printf '\\\\033]0;${title}\\\\007'; cd '${ROOT}' && ${cmd}"
+  delay 0.1
+  set custom title of front window to "${title}"
+end tell
+APPLESCRIPT
+  sleep 0.4
 }
 
-trap cleanup INT TERM
+log "Abrindo terminais..."
 
-# Backend Python
-echo -e "${GREEN}[backend]${NC} Iniciando Python na porta 8000..."
-uv run python -m crivo.runner >> "$LOG_DIR/backend.log" 2>&1 &
-BACKEND_PID=$!
-
-# Frontend Next.js
-echo -e "${GREEN}[frontend]${NC} Iniciando Next.js na porta 3000..."
-(cd "$ROOT" && pnpm --filter '@crivo/admin' dev >> "$LOG_DIR/frontend.log" 2>&1) &
-FRONTEND_PID=$!
+open_terminal "crivo · api"     "uv run python -m crivo.workers.api_worker"
+open_terminal "crivo · scraper" "uv run python -m crivo.workers.scraper_worker"
+open_terminal "crivo · sender"  "uv run python -m crivo.workers.sender_worker"
+open_terminal "crivo · admin"   "cd packages/admin && pnpm dev"
 
 echo ""
-echo -e "  Backend:  ${GREEN}http://localhost:8000${NC}  (docs: http://localhost:8000/docs)"
-echo -e "  Frontend: ${GREEN}http://localhost:3000${NC}"
-echo -e "  Logs:     ${LOG_DIR}/"
-echo -e "\n  Pressione ${YELLOW}Ctrl+C${NC} para encerrar tudo.\n"
-
-# Exibe logs dos dois serviços em tempo real
-tail -f "$LOG_DIR/backend.log" -f "$LOG_DIR/frontend.log" &
-TAIL_PID=$!
-
-wait "$BACKEND_PID" "$FRONTEND_PID"
-kill "$TAIL_PID" 2>/dev/null
-exit 0
+log "Pronto! Serviços iniciados:"
+echo "   API     → http://localhost:8000"
+echo "   Docs    → http://localhost:8000/docs"
+echo "   Admin   → http://localhost:3000"
