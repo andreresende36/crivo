@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
-# kill-ports.sh — Mata os workers do Crivo e o Admin Next.js
-# Uso: ./kill-ports.sh
+# kill.sh — Mata os workers do Crivo e o Admin Next.js
+# Uso: ./kill.sh
 # =============================================================================
 
 set -euo pipefail
