@@ -33,6 +33,7 @@ TABLES_TO_TRUNCATE = [
     "affiliate_links",  # FK: product_id, user_id
     # 3. Tabelas base com dependências leves (Nível 1)
     "products",  # FK: badge_id, category_id, marketplace_id, brand_id
+    "title_examples",  # FK: category_id → categories (deve vir antes de categories)
     # 4. Entidades "Raiz" e Lookups (Nível 0)
     "users",
     "system_logs",
@@ -40,9 +41,13 @@ TABLES_TO_TRUNCATE = [
     "categories",
     "marketplaces",
     "brands",
-    "title_examples",  # (Opcional)
-    "admin_settings",  # (Opcional)
+    "admin_settings",  # PK: key (TEXT)
 ]
+
+# Tabelas cujo PK não é "id" — mapeadas para a coluna correta
+TABLE_PK: dict[str, str] = {
+    "admin_settings": "key",
+}
 
 
 async def truncate_supabase() -> None:
@@ -63,9 +68,9 @@ async def truncate_supabase() -> None:
         # Acessa via _db que retorna o AsyncClient conectado
         for table in TABLES_TO_TRUNCATE:
             try:
-                # Delete sem where = truncate (deleta todas as linhas)
+                pk = TABLE_PK.get(table, "id")
                 await supabase._db.table(table).delete().neq(
-                    "id", "00000000-0000-0000-0000-000000000000"
+                    pk, "00000000-0000-0000-0000-000000000000"
                 ).execute()
                 logger.info("supabase_table_truncated", table=table)
             except Exception as e:
@@ -76,7 +81,7 @@ async def truncate_supabase() -> None:
     except Exception as e:
         logger.error("supabase_connect_failed", error=str(e))
     finally:
-        supabase.close()
+        await supabase.close()
 
 
 async def _list_all_storage_paths(
@@ -135,7 +140,7 @@ async def clear_supabase_storage(
         logger.error("storage_clear_failed", bucket=bucket, folder=folder, error=str(e))
         raise
     finally:
-        supabase.close()
+        await supabase.close()
 
 
 async def main(truncate: bool = False, clear_storage: bool = False) -> None:
