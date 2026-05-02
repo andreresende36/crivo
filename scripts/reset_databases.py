@@ -195,12 +195,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Apaga todos os arquivos em images/products no Supabase Storage",
     )
-    parser.add_argument(
-        "--include-supabase",
-        action="store_true",
-        help="(ignorado — Supabase é o único backend desde a remoção do SQLite)",
-    )
-
     args = parser.parse_args()
 
     if not args.truncate:
