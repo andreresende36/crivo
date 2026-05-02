@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dev.sh — Crivo: setup + 4 workers em terminais separados (macOS)
+# dev.sh — Crivo: setup + 4 workers em abas (iTerm2 → Terminal.app fallback)
 # Uso: ./dev.sh
 # =============================================================================
 
@@ -63,13 +63,50 @@ log "Build dos tipos TS (@crivo/types)..."
 pnpm --filter "@crivo/types" build --silent 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-# Abre cada serviço em um terminal separado (macOS Terminal.app)
+# Abre cada serviço em uma aba — iTerm2 (primário) ou Terminal.app (fallback)
 # ---------------------------------------------------------------------------
 
-open_terminal() {
+USE_ITERM=false
+if osascript -e 'id of app "iTerm2"' &>/dev/null 2>&1; then
+  USE_ITERM=true
+fi
+
+_iterm_first=true
+
+open_tab() {
   local title="$1"
   local cmd="$2"
-  osascript <<APPLESCRIPT
+
+  if $USE_ITERM; then
+    if $_iterm_first; then
+      osascript <<APPLESCRIPT
+tell application "iTerm2"
+  activate
+  set w to (create window with default profile)
+  tell current session of w
+    set name to "${title}"
+    write text "cd '${ROOT}' && ${cmd}"
+  end tell
+end tell
+APPLESCRIPT
+      _iterm_first=false
+    else
+      osascript <<APPLESCRIPT
+tell application "iTerm2"
+  tell current window
+    set t to (create tab with default profile)
+    tell current session of t
+      set name to "${title}"
+      write text "cd '${ROOT}' && ${cmd}"
+    end tell
+  end tell
+end tell
+APPLESCRIPT
+    fi
+  else
+    # Fallback: Terminal.app — cada aba na mesma janela
+    if $_iterm_first; then
+      osascript <<APPLESCRIPT
 tell application "Terminal"
   activate
   set w to do script "printf '\\\\033]0;${title}\\\\007'; cd '${ROOT}' && ${cmd}"
@@ -77,15 +114,27 @@ tell application "Terminal"
   set custom title of front window to "${title}"
 end tell
 APPLESCRIPT
+      _iterm_first=false
+    else
+      osascript <<APPLESCRIPT
+tell application "Terminal"
+  activate
+  tell application "System Events" to keystroke "t" using command down
+  delay 0.3
+  do script "printf '\\\\033]0;${title}\\\\007'; cd '${ROOT}' && ${cmd}" in front window
+end tell
+APPLESCRIPT
+    fi
+  fi
   sleep 0.4
 }
 
-log "Abrindo terminais..."
+log "Abrindo abas..."
 
-open_terminal "crivo · api"     "uv run python -m crivo.workers.api_worker"
-open_terminal "crivo · scraper" "uv run python -m crivo.workers.scraper_worker"
-open_terminal "crivo · sender"  "uv run python -m crivo.workers.sender_worker"
-open_terminal "crivo · admin"   "cd packages/admin && pnpm dev"
+open_tab "crivo · api"     "uv run python -m crivo.workers.api_worker"
+open_tab "crivo · scraper" "uv run python -m crivo.workers.scraper_worker"
+open_tab "crivo · sender"  "uv run python -m crivo.workers.sender_worker"
+open_tab "crivo · admin"   "cd packages/admin && pnpm dev"
 
 echo ""
 log "Pronto! Serviços iniciados:"
