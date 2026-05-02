@@ -111,7 +111,11 @@ if [[ -z "$TEST_CMD" ]]; then
   if [[ -f "$PYPROJECT" ]]; then
     if grep -q "pytest" "$PYPROJECT" 2> /dev/null; then
       if command -v uv &> /dev/null && [[ -f "$PROJECT_ROOT/uv.lock" ]]; then
-        TEST_CMD="uv run --env-file .env pytest -v --tb=short"
+        if [[ -f "$PROJECT_ROOT/.env" ]]; then
+          TEST_CMD="uv run --env-file .env pytest -v --tb=short"
+        else
+          TEST_CMD="uv run pytest -v --tb=short"
+        fi
         TEST_FRAMEWORK="pytest"
       else
         TEST_CMD="python -m pytest -v --tb=short"
