@@ -67,6 +67,16 @@ class PriceHistory(BaseModel):
     pix_price: Decimal | None = None
     recorded_at: datetime
 
+class PriceHistoryY2026m07(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    product_id: str
+    price: Decimal
+    original_price: Decimal | None = None
+    pix_price: Decimal | None = None
+    recorded_at: datetime
+
 class Product(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

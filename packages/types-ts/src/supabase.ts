@@ -362,6 +362,33 @@ export type Database = {
         }
         Relationships: []
       }
+      price_history_y2026m07: {
+        Row: {
+          id: string
+          original_price: number | null
+          pix_price: number | null
+          price: number
+          product_id: string
+          recorded_at: string
+        }
+        Insert: {
+          id?: string
+          original_price?: number | null
+          pix_price?: number | null
+          price: number
+          product_id: string
+          recorded_at?: string
+        }
+        Update: {
+          id?: string
+          original_price?: number | null
+          pix_price?: number | null
+          price?: number
+          product_id?: string
+          recorded_at?: string
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           badge_id: string | null
