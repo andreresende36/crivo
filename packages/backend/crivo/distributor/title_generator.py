@@ -16,18 +16,14 @@ Gera títulos catchy para ofertas usando Claude Haiku via OpenRouter.
 
 import asyncio
 import re
-from typing import TYPE_CHECKING
-
 import httpx
 import structlog
 
 from crivo.config import settings
+from crivo.database.title_examples import TitleExample
 from crivo.utils.prompts_loader import load_prompt
 from crivo.utils.brands import extract_brand
 from crivo.utils.openrouter import OPENROUTER_URL
-
-if TYPE_CHECKING:
-    from crivo.database.title_examples import TitleExample
 
 logger = structlog.get_logger(__name__)
 
