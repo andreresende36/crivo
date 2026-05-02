@@ -67,7 +67,7 @@ pnpm --filter "@crivo/types" build --silent 2>/dev/null || true
 # ---------------------------------------------------------------------------
 
 USE_ITERM=false
-if osascript -e 'id of app "iTerm2"' &>/dev/null 2>&1; then
+if osascript -e 'id of app "iTerm"' &>/dev/null 2>&1; then
   USE_ITERM=true
 fi
 
@@ -80,7 +80,7 @@ open_tab() {
   if $USE_ITERM; then
     if $_iterm_first; then
       osascript <<APPLESCRIPT
-tell application "iTerm2"
+tell application "iTerm"
   activate
   set w to (create window with default profile)
   tell current session of w
@@ -92,7 +92,7 @@ APPLESCRIPT
       _iterm_first=false
     else
       osascript <<APPLESCRIPT
-tell application "iTerm2"
+tell application "iTerm"
   tell current window
     set t to (create tab with default profile)
     tell current session of t
