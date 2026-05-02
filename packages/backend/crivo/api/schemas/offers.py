@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class OffersListQuery(BaseModel):
-    status: Literal["approved", "rejected", "pending"] | None = None
+    status: Literal["approved", "rejected", "pending", "in_queue", "sent"] | None = None
     category_id: str | None = None
     search: str | None = None
     min_price: float | None = Field(default=None, ge=0)
