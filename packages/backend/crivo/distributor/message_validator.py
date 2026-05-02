@@ -21,12 +21,29 @@ class ValidationResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _validate_title(first_line: str, errors: list[str], warnings: list[str]) -> None:
+def _find_title_line(lines: list[str]) -> str | None:
+    """Acha a primeira linha 'título' (em negrito) — pula flash_sale e linhas vazias."""
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        # Pula a tag de promoção relâmpago, que não é o título principal
+        if line.startswith("🚨"):
+            continue
+        return line
+    return None
+
+
+def _validate_title(lines: list[str], errors: list[str], warnings: list[str]) -> None:
     """Valida o título da mensagem (negrito + CAPS LOCK + tamanho)."""
-    if not first_line.startswith("*") or not first_line.rstrip().endswith("*"):
+    title_line = _find_title_line(lines)
+    if title_line is None:
+        errors.append("Título ausente")
+        return
+    if not title_line.startswith("*") or not title_line.rstrip().endswith("*"):
         errors.append("Título não está em negrito (*...*)")
         return
-    titulo = first_line.strip("* ")
+    titulo = title_line.strip("* ")
     if titulo != titulo.upper():
         errors.append("Título não está em CAPS LOCK")
     if len(titulo) > 45:
@@ -37,8 +54,10 @@ def _validate_title(first_line: str, errors: list[str], warnings: list[str]) -> 
 
 def _validate_required_elements(text: str, errors: list[str], warnings: list[str]) -> None:
     """Valida elementos obrigatórios do template (emojis, preço, CTA, rodapé)."""
-    if "📉" not in text or "% OFF" not in text:
-        errors.append("Falta 📉 XX% OFF")
+    has_pct_off = "📉" in text and "% OFF" in text
+    has_savings = "💸" in text and "Desconto de R$" in text
+    if not has_pct_off and not has_savings:
+        errors.append("Falta linha de desconto (📉 XX% OFF ou 💸 Desconto de R$ ...)")
     if "por R$" not in text:
         errors.append("Falta preço final (por R$)")
     if "🤘🏻" not in text:
@@ -105,9 +124,8 @@ def validate_message(
     errors: list[str] = []
     warnings: list[str] = []
     lines = whatsapp_text.split("\n")
-    first_line = lines[0] if lines else ""
 
-    _validate_title(first_line, errors, warnings)
+    _validate_title(lines, errors, warnings)
     _validate_required_elements(whatsapp_text, errors, warnings)
     _validate_conditional_fields(whatsapp_text, free_shipping, rating, review_count, has_image, errors, warnings)
 
