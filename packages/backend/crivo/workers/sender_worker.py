@@ -120,8 +120,7 @@ async def sender_loop(
             if not sent:
                 logger.debug("sender_queue_empty_waiting")
         except Exception as exc:
-            import traceback
-            logger.error("sender_loop_error", error=str(exc), traceback=traceback.format_exc())
+            logger.error("sender_loop_error", error=str(exc))
             try:
                 await alert_bot.send_error(exc, context="sender_loop")
             except Exception:

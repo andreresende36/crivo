@@ -163,7 +163,14 @@ def _format_value(key: str, value) -> str:
     if key in ("genuine",):
         return f"{_C.B_GREEN}{value}{_C.RESET}"
     if key in ("fake", "dupes_skipped", "errors"):
-        color = _C.B_RED if value and int(value) > 0 else _C.DIM
+        if isinstance(value, (list, tuple, dict, set)):
+            count = len(value)
+        else:
+            try:
+                count = int(value) if value else 0
+            except (TypeError, ValueError):
+                count = 0
+        color = _C.B_RED if count > 0 else _C.DIM
         return f"{color}{value}{_C.RESET}"
     if key in ("error",):
         return f"{_C.RED}{value}{_C.RESET}"
