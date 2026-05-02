@@ -99,10 +99,8 @@ def _offer_to_product(offer: UnsentOfferRow) -> ScrapedProduct:
         installments_without_interest=bool(
             offer.get("installments_without_interest", False)
         ),
-        installment_count=int(inst_count_raw) if inst_count_raw else None,
-        installment_value=(
-            float(inst_value_raw) if inst_value_raw else None
-        ),
+        installment_count=int(_safe_number(inst_count_raw)) if inst_count_raw else None,
+        installment_value=_safe_number(inst_value_raw) if inst_value_raw else None,
         badge=offer.get("badge") or "",
     )
 
