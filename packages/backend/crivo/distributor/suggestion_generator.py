@@ -8,11 +8,11 @@ Usa Claude Haiku via OpenRouter em uma unica chamada.
 import asyncio
 import json
 import re
-from typing import TYPE_CHECKING
 
 import structlog
 
 from crivo.config import settings
+from crivo.database.title_examples import TitleExample
 from crivo.utils.openrouter import (
     OPENROUTER_URL,
     call_openrouter_sync,
@@ -21,9 +21,6 @@ from crivo.utils.openrouter import (
 )
 from crivo.utils.prompts_loader import load_prompt
 from crivo.utils.brands import extract_brand
-
-if TYPE_CHECKING:
-    from crivo.database.title_examples import TitleExample
 
 logger = structlog.get_logger(__name__)
 
