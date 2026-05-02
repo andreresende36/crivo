@@ -351,10 +351,7 @@ async def get_admin_queue(
 ):
     """Retorna a fila completa com prioridade e notas do admin."""
     async with StorageManager() as storage:
-        if storage._using_supabase:
-            offers = await storage._supabase.get_pending_scored_offers(limit=100)
-        else:
-            offers = await storage._sqlite.get_pending_scored_offers(limit=100)
+        offers = await storage._supabase.get_pending_scored_offers(limit=100)
     return {"queue": offers}
 
 
@@ -549,59 +546,39 @@ async def _update_scored_offer(
     **fields: Any,
 ) -> bool:
     """Atualiza campos arbitrários de um scored_offer."""
-    if storage._using_supabase:
-        try:
-            resp = await (
-                storage._supabase._client.table("scored_offers")
-                .update(fields)
-                .eq("id", scored_offer_id)
-                .execute()
-            )
-            return bool(resp.data)
-        except Exception as exc:
-            logger.warning("update_scored_offer_failed", error=str(exc))
-            return False
-    else:
-        # SQLite fallback
-        set_clause = ", ".join(f"{k} = ?" for k in fields)
-        values = list(fields.values()) + [scored_offer_id]
-        try:
-            async with storage._sqlite._get_conn() as conn:
-                cursor = await conn.execute(
-                    f"UPDATE scored_offers SET {set_clause} WHERE id = ?",
-                    values,
-                )
-                await conn.commit()
-                return (cursor.rowcount or 0) > 0
-        except Exception as exc:
-            logger.warning("update_scored_offer_sqlite_failed", error=str(exc))
-            return False
+    try:
+        resp = await (
+            storage._supabase._client.table("scored_offers")
+            .update(fields)
+            .eq("id", scored_offer_id)
+            .execute()
+        )
+        return bool(resp.data)
+    except Exception as exc:
+        logger.warning("update_scored_offer_failed", error=str(exc))
+        return False
 
 
 async def _get_admin_settings(storage: StorageManager) -> dict[str, Any]:
     """Lê todas as configurações do admin_settings."""
-    if storage._using_supabase:
-        try:
-            resp = await storage._supabase._client.table("admin_settings").select("key, value").execute()
-            return {row["key"]: row["value"] for row in (resp.data or [])}
-        except Exception:
-            return {}
-    return {}
+    try:
+        resp = await storage._supabase._client.table("admin_settings").select("key, value").execute()
+        return {row["key"]: row["value"] for row in (resp.data or [])}
+    except Exception:
+        return {}
 
 
 async def _set_admin_setting(storage: StorageManager, key: str, value: Any) -> bool:
     """Upsert de uma configuração no admin_settings."""
-    if storage._using_supabase:
-        try:
-            await storage._supabase._client.table("admin_settings").upsert(
-                {"key": key, "value": value},
-                on_conflict="key",
-            ).execute()
-            return True
-        except Exception as exc:
-            logger.warning("set_admin_setting_failed", error=str(exc))
-            return False
-    return False
+    try:
+        await storage._supabase._client.table("admin_settings").upsert(
+            {"key": key, "value": value},
+            on_conflict="key",
+        ).execute()
+        return True
+    except Exception as exc:
+        logger.warning("set_admin_setting_failed", error=str(exc))
+        return False
 
 
 async def _call_rpc(
@@ -610,11 +587,9 @@ async def _call_rpc(
     params: dict[str, Any],
 ) -> list[dict] | dict | None:
     """Chama uma RPC function do Supabase (async)."""
-    if storage._using_supabase:
-        try:
-            resp = await storage._supabase._client.rpc(fn_name, params).execute()
-            return resp.data
-        except Exception as exc:
-            logger.warning("rpc_call_failed", fn=fn_name, error=str(exc))
-            return None
-    return None
+    try:
+        resp = await storage._supabase._client.rpc(fn_name, params).execute()
+        return resp.data
+    except Exception as exc:
+        logger.warning("rpc_call_failed", fn=fn_name, error=str(exc))
+        return None
