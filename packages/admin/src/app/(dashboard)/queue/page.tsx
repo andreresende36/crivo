@@ -136,7 +136,7 @@ function SortableQueueItem({
           </span>
         )}
         <span className="px-2 py-0.5 rounded bg-success/10 text-success text-[10px] uppercase tracking-wider font-bold inline-block self-end mt-1">
-          -{Math.round(item.discount_percent ?? 0)}% OFF
+          -{Math.floor(item.discount_percent ?? 0)}% OFF
         </span>
       </div>
 
@@ -333,7 +333,7 @@ export default function QueuePage() {
           <p className="text-[13px] text-muted-foreground font-medium mb-1">Desconto médio</p>
           <p className="text-[24px] font-display font-medium text-foreground tracking-tight tabular-nums">
             {queue.length > 0
-              ? `${Math.round(
+              ? `${Math.floor(
                   queue.reduce((s, q) => s + (q.discount_percent ?? 0), 0) /
                     queue.length
                 )}%`

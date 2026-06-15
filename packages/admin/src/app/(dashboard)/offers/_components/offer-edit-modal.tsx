@@ -124,7 +124,7 @@ export function OfferEditModal({
               <p className="text-xs text-muted-foreground font-mono">
                 {formatCurrency(offer.current_price)}{" "}
                 {offer.discount_percent > 0 && (
-                  <span className="text-success">(-{Math.round(offer.discount_percent)}%)</span>
+                  <span className="text-success">(-{Math.floor(offer.discount_percent)}%)</span>
                 )}
               </p>
             </div>

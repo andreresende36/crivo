@@ -367,7 +367,7 @@ export default function DashboardPage() {
                       </span>
                     )}
                     <span className="px-2 py-0.5 rounded bg-success/10 text-success text-[10px] uppercase tracking-wider font-bold">
-                      -{Math.round(deal.discount_percent ?? 0)}% OFF
+                      -{Math.floor(deal.discount_percent ?? 0)}% OFF
                     </span>
                   </div>
                 </div>

@@ -6,7 +6,6 @@ Usa Claude Haiku via OpenRouter em uma unica chamada.
 
 
 import asyncio
-import json
 import re
 
 import structlog
@@ -14,7 +13,6 @@ import structlog
 from crivo.config import settings
 from crivo.database.title_examples import TitleExample
 from crivo.utils.openrouter import (
-    OPENROUTER_URL,
     call_openrouter_sync,
     extract_content,
     parse_llm_json,
@@ -55,7 +53,7 @@ def _build_user_prompt(
 
     discount_line = ""
     if discount_pct > 0:
-        discount_line = f"Desconto: {discount_pct:.0f}%\n"
+        discount_line = f"Desconto: {int(discount_pct)}%\n"
 
     rating_line = ""
     if rating and review_count:
@@ -105,13 +103,12 @@ def _fallback_suggestions(
         title = "OFERTA IMPERDÍVEL"
 
     price_str = f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    orig_str = f"{original_price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if original_price else price_str
     shipping = "\n✅ Frete Grátis" if free_shipping else ""
 
     body = (
         f"*{title}*\n\n"
         f"{product_title}\n\n"
-        f"📉 {discount_pct:.0f}% OFF\n"
+        f"📉 {int(discount_pct)}% OFF\n"
         f"*por R$ {price_str}* 🤘🏻\n"
         f"{shipping}\n\n"
         f"🛒 Comprar agora! {{LINK}}\n\n"

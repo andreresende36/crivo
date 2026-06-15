@@ -111,7 +111,7 @@ function PriceBadges({
         )}
       {offer.discount_percent >= 50 && (
         <span className="px-1.5 py-0.5 rounded bg-destructive/10 text-destructive text-[9px] uppercase tracking-wider font-bold">
-          {Math.round(offer.discount_percent)}% OFF
+          {Math.floor(offer.discount_percent)}% OFF
         </span>
       )}
       {offer.free_shipping && (
@@ -253,7 +253,7 @@ export function OffersTable({
                         </span>
                       )}
                       <span className="px-2 py-0.5 mt-1 self-start rounded bg-success/10 text-success text-[10px] uppercase tracking-wider font-bold inline-block">
-                        -{Math.round(o.discount_percent)}% OFF
+                        -{Math.floor(o.discount_percent)}% OFF
                       </span>
                     </div>
                   </td>

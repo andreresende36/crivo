@@ -109,7 +109,7 @@ def _generate_sync(
 
     discount_info = ""
     if original_price and original_price > price:
-        pct = round((1 - price / original_price) * 100)
+        pct = int((1 - price / original_price) * 100)
         discount_info = f" (desconto de {pct}%)"
 
     user_msg = _TITLE_USER_TEMPLATE.format(

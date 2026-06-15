@@ -116,11 +116,11 @@ class MessageFormatter:
         final_price = product.pix_price or product.price
         original_price = product.original_price or product.price
 
-        # Desconto calculado
+        # Desconto calculado — exibido sempre arredondado para baixo
         if original_price > 0 and final_price < original_price:
-            discount_pct = round((1 - final_price / original_price) * 100)
+            discount_pct = int((1 - final_price / original_price) * 100)
         else:
-            discount_pct = round(product.discount_pct)
+            discount_pct = int(product.discount_pct)
 
         # Sufixo de pagamento
         payment_suffix = self._build_payment_suffix(product)

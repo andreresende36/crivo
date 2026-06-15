@@ -98,7 +98,7 @@ export function OfferPreviewCard({ offer, open, onClose, onEdit, onStatusChange 
               </span>
             )}
             <span className="px-2 py-1 rounded bg-success/10 text-success text-sm font-bold">
-              -{Math.round(offer.discount_percent)}% OFF
+              -{Math.floor(offer.discount_percent)}% OFF
             </span>
           </div>
 
