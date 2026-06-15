@@ -4,18 +4,20 @@
 # =============================================================================
 
 FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
 
 # --- Dependencies ---
 FROM base AS deps
 RUN apk add --no-cache bash
 WORKDIR /app
+ENV npm_config_strict_dep_builds=false
+ENV npm_config_verify_deps_before_run=false
 # Copy workspace manifests (root + packages needed by admin)
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc ./
 COPY scripts/install-hooks.sh ./scripts/
 COPY packages/admin/package.json ./packages/admin/
 COPY packages/types-ts/package.json ./packages/types-ts/
-RUN pnpm install --frozen-lockfile --filter "@crivo/admin..." --filter "@crivo/types"
+RUN pnpm install --frozen-lockfile --filter "@crivo/admin..." --filter "@crivo/types" --config.strict-dep-builds=false
 
 # --- Build types first ---
 COPY packages/types-ts/ ./packages/types-ts/
@@ -24,6 +26,8 @@ RUN pnpm --filter "@crivo/types" build
 # --- Build admin ---
 FROM base AS builder
 WORKDIR /app
+ENV npm_config_strict_dep_builds=false
+ENV npm_config_verify_deps_before_run=false
 # Copy workspace manifests so pnpm/next can resolve the workspace
 COPY --from=deps /app/pnpm-workspace.yaml ./
 COPY --from=deps /app/package.json ./

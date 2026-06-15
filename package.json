@@ -13,6 +13,14 @@
   "workspaces": [
     ".claude/mcp-servers/*"
   ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "msw",
+      "sharp",
+      "unrs-resolver"
+    ]
+  },
   "scripts": {
     "postinstall": "bash scripts/install-hooks.sh",
     "codegen": "bash scripts/codegen.sh",
