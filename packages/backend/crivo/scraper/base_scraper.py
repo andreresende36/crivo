@@ -124,10 +124,10 @@ class ScrapedProduct:
     marketplace: str = "Mercado Livre"  # Marketplace de origem
 
     def __post_init__(self):
-        # Desconto baseado no preço Pix se disponível, senão no preço cartão
-        effective_price = self.pix_price if self.pix_price else self.price
-        if self.original_price and self.original_price > effective_price:
-            self.discount_pct = round((1 - effective_price / self.original_price) * 100, 1)
+        # Desconto sempre sobre current_price (self.price) — deve casar com o
+        # preço gravado/exibido. O desconto Pix é recalculado no formatter.
+        if self.original_price and self.original_price > self.price:
+            self.discount_pct = round((1 - self.price / self.original_price) * 100, 1)
 
     def to_product(self) -> "crivo_types.Product":
         """Converte para crivo_types.Product (validação Pydantic antes de gravar no banco)."""
