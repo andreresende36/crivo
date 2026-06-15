@@ -7,7 +7,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from crivo.scraper.base_scraper import BaseScraper, ScrapedProduct, USER_AGENTS
-from bs4 import Tag
 from crivo.scraper.ml_scraper import MLScraper, ScrapeSource
 
 
@@ -263,6 +262,19 @@ class TestScrapedProduct:
             original_price=599.90,
         )
         assert p.discount_pct == pytest.approx(50.0)
+
+    def test_discount_pct_over_current_not_pix(self):
+        # Regressão MLBU3454994034: desconto deve casar com current_price
+        # (89.90), não com pix_price (85.40), que daria 71.2%.
+        p = ScrapedProduct(
+            ml_id="MLBU3454994034",
+            url="http://ml.com",
+            title="Mochila",
+            price=89.90,
+            original_price=297.00,
+            pix_price=85.40,
+        )
+        assert p.discount_pct == pytest.approx(69.7)
 
 
 # ===========================================================================

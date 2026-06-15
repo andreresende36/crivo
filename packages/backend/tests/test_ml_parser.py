@@ -328,6 +328,32 @@ class TestPriceExtraction:
         assert card_price == pytest.approx(99.0)
         assert self.parser._get_original_price(card) is None  # type: ignore[arg-type]
 
+    def test_pix_price_splits_current_from_listed(self):
+        # Regressão MLBU3454994034: quando o preço atual carrega selo Pix,
+        # o preço grande exibido é o Pix e o preço de tabela vem das parcelas.
+        html = """
+        <div class="poly-card">
+          <div class="poly-price__current">
+            <span class="poly-price__disc_label">5% OFF no Pix</span>
+            <span class="andes-money-amount">
+              <span class="andes-money-amount__fraction">85</span>
+              <span class="andes-money-amount__cents">,40</span>
+            </span>
+          </div>
+          <div class="poly-price__installments">
+            <span class="andes-money-amount poly-phrase-price">
+              <span class="andes-money-amount__fraction">89</span>
+              <span class="andes-money-amount__cents">,90</span>
+            </span>
+          </div>
+        </div>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        card = soup.select_one(".poly-card")
+        card_price, pix_price = self.parser._get_prices(card)  # type: ignore[arg-type]
+        assert card_price == pytest.approx(89.90)
+        assert pix_price == pytest.approx(85.40)
+
 
 # ===========================================================================
 # ProductParser — clean_price
